@@ -2,6 +2,13 @@
 //Check data availability for June and Sept 2019 for roi
 ///////////////////////////
 
+
+//Why .median()?
+//During May 2019, Sentinel-2 likely captured multiple images over your ROI. 
+//By calling .median(), Earth Engine looks at every overlapping pixel across all those dates and takes the median value. 
+//This is a highly effective way to automatically remove transient clouds or shadows from your final visualization!
+
+
 // 1. Define the Region of Interest
 var roi = ee.Geometry.BBox(-111.00, 31.70, -110.75, 31.95);
 
