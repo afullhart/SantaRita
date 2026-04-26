@@ -76,7 +76,17 @@ function feat_iteration_fn(ft){
     0
   );
 
-  return ft.set('LPI', max_area, 'BGR', v_pct_area);
+  function Get_Mean_Nearest_Bground_Pixel(v_image, v_points) {
+    var v_distance = v_image.fastDistanceTransform().sqrt().multiply(ee.Image.pixelArea().sqrt()).rename("distance");
+    v_points = v_distance.reduceRegions(v_points, ee.Reducer.first().setOutputs(["distance"]));
+    return ee.Number(v_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean'));
+  }
+
+  var N_PTS = 1000;
+  var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1111, 0.05);
+  var v_nearestMeanValues = Get_Mean_Nearest_Bground_Pixel(binary, v_rnd);
+
+  return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
 }
 
 var final_grids = v_sent2_joined_grids.map(feat_iteration_fn);
