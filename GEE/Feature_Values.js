@@ -83,7 +83,7 @@ function feat_iteration_fn(ft){
   }
 
   var N_PTS = 1000;
-  var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1111, 0.05);
+  var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1234, 0.05);
   var v_nearestMeanValues = Get_Mean_Nearest_Bground_Pixel(binary, v_rnd);
 
   return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
