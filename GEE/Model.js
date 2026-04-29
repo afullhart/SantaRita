@@ -27,7 +27,7 @@ var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Extract projection from the first image in the collection
 var projSent2 = sent2_ic.first().select('B2').projection();
 
-// Mosaic, clip, select bands (added B5), and APPLY SCALE FACTOR (0.0001)
+// Mosaic, clip, select bands, and APPLY SCALE FACTOR (0.0001)
 var sent2_im = sent2_ic
   .mosaic()
   .clip(v_extent)
@@ -49,23 +49,88 @@ var mcari = sent2_im.expression(
 // Add both NDVI and MCARI bands to the image
 sent2_im = sent2_im.addBands([ndvi, mcari]);
 
-// =========================================================================
-// MODEL TRAINING & PREDICTION
-// =========================================================================
-
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'];
 
-// Train Model 1: BGR
+
+// =========================================================================
+// K-FOLDS CROSS VALIDATION (K=5)
+// =========================================================================
+
+var k_folds = 5;
+var v_list_seeds = ee.List([123, 456, 789, 101, 333]);
+var fold_list = ee.List.sequence(0, 4);
+
+// Add a random column and create fold IDs (0, 1, 2, 3, 4)
+var fc_folds = fc.randomColumn('random', 42).map(function(ft) {
+  return ft.set('fold', ee.Number(ft.get('random')).multiply(k_folds).floor());
+});
+
+// Reusable function to run CV for any given target property
+function runCV(targetProp) {
+  var fold_rmse = fold_list.map(function(fold) {
+    var i = ee.Number(fold);
+    var current_seed = v_list_seeds.get(i);
+    
+    // Split into 80% train (out-of-fold) and 20% test (in-fold)
+    var train_fc = fc_folds.filter(ee.Filter.neq('fold', i));
+    var test_fc = fc_folds.filter(ee.Filter.eq('fold', i));
+    
+    // Train Model (bagFraction included here)
+    var rf = ee.Classifier.smileRandomForest({
+      numberOfTrees: 500, 
+      minLeafPopulation: 5, 
+      bagFraction: 0.8, 
+      seed: current_seed
+    })
+    .setOutputMode('REGRESSION')
+    .train({
+      features: train_fc, 
+      classProperty: targetProp, 
+      inputProperties: inputProps
+    });
+    
+    // Classify test set
+    var tested = test_fc.classify({
+      classifier: rf, 
+      outputName: 'predicted'
+    });
+    
+    // Calculate RMSE for this fold
+    var mse = tested.map(function(ft) {
+      var diff = ee.Number(ft.get('predicted')).subtract(ee.Number(ft.get(targetProp)));
+      return ft.set('sq_diff', diff.multiply(diff));
+    }).reduceColumns({
+      reducer: ee.Reducer.mean(),
+      selectors: ['sq_diff']
+    }).get('mean');
+    
+    return ee.Number(mse).sqrt();
+  });
+  
+  // Return the median RMSE across all 5 folds
+  return fold_rmse.reduce(ee.Reducer.median());
+}
+
+print('Median RMSE (BGR):', runCV('BGR'));
+print('Median RMSE (LPI):', runCV('LPI'));
+print('Median RMSE (MFT):', runCV('MFT'));
+
+
+// =========================================================================
+// FINAL MODEL TRAINING & PREDICTION
+// =========================================================================
+
+// Train Model 1: BGR (bagFraction removed)
 var model_bgr = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
   .setOutputMode('REGRESSION')
   .train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
 
-// Train Model 2: LPI
+// Train Model 2: LPI (bagFraction removed)
 var model_lpi = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
   .setOutputMode('REGRESSION')
   .train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
 
-// Train Model 3: MFT
+// Train Model 3: MFT (bagFraction removed)
 var model_mft = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
   .setOutputMode('REGRESSION')
   .train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
@@ -130,4 +195,3 @@ Export.table.toDrive({
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
-
