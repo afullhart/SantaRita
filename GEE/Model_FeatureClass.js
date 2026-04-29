@@ -93,6 +93,8 @@ var v_sent2_with_bands = bandsToExtract.reduceRegions({
 // Clean up any potential grids that might have fallen on masked image pixels (null values)
 v_sent2_with_bands = v_sent2_with_bands.filter(ee.Filter.notNull(['B2', 'B3', 'B4']));
 
+
+
 // =========================================================================
 // EXPORT
 // =========================================================================
