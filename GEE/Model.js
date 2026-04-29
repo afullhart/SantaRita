@@ -57,21 +57,14 @@ var v_model = ee.Classifier.smileRandomForest({
   }).setOutputMode('REGRESSION')
   .train({
     features: fc,
-      classProperty: 'BGR', 
-      // Added B5 and MCARI to the input predictors to match the new image bands
+      classProperty: 'BGR',
       inputProperties: ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'] 
   });
 
-print(v_model);
-
 var pred_im = sent2_im.classify(v_model);
 
-
-
-// 1. Load a DEM (SRTM)
+// Generate hillshade
 var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
-
-// Generate the hillshade
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
 
