@@ -101,3 +101,10 @@ Export.table.toDrive({
   fileFormat: 'CSV'
 });
 
+
+Export.table.toAsset({
+  collection: final_grids,
+  assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid',
+  description: 'ftv_sentinel2_grid_srer_slud'
+});
+
