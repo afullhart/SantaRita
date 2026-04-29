@@ -52,13 +52,13 @@ function feat_iteration_fn(ft){
   var patch_vectors = binary.reduceToVectors({
     reducer: ee.Reducer.countEvery(),
     geometry: ft.geometry(),        // The area to process
-    scale: 0.05,               // Force native 5cm scale
+    scale: 0.05,                    // Force native 5cm scale
     crs: native_proj.crs(),
     geometryType: 'polygon',
     eightConnected: true,
     labelProperty: 'class_val',
-    maxPixels: 1e13,           // Allow processing over a massive area
-    tileScale: 16              // Prevent memory crashes during tile extraction
+    maxPixels: 1e13,                // Allow processing over a massive area
+    tileScale: 16                   // Prevent memory crashes during tile extraction
   });
 
   // 2. Calculate the true physical area of every native-resolution polygon
