@@ -68,11 +68,44 @@ var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
 
-
 Map.addLayer(pred_im, {min:0, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']});
 //Map.addLayer(pred_im, {min:0, max:1, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
 
 
+// =========================================================================
+// SAMPLING & CSV EXPORT
+// =========================================================================
 
+// Convert the grid features to point geometries located at their centers
+var fc_centers = fc.map(function(ft) {
+  return ft.centroid(1); // 1m max error for centroid calculation
+});
 
+// Sample the predicted image at these exact center points.
+// sampleRegions will extract the predicted value (default band name is 'classification')
+// and keep the true 'BGR' value from the input collection.
+var sampled_data = pred_im.sampleRegions({
+  collection: fc_centers,
+  properties: ['BGR'], // Retain the True BGR from your training points
+  scale: projSent2.nominalScale(), // Matches the 10m Sentinel-2 scale
+  tileScale: 4
+});
+
+// Format the collection for a clean CSV export
+var export_csv = sampled_data.map(function(ft) {
+  // We return a Feature with null geometry so the CSV doesn't get bloated 
+  // with GeoJSON coordinate strings, keeping it clean for tabular analysis.
+  return ee.Feature(null, { 
+    'True_BGR': ft.get('BGR'),
+    'Predicted_BGR': ft.get('classification') // output band name of an RF regression
+  });
+});
+
+// Export the table to Google Drive as a CSV
+Export.table.toDrive({
+  collection: export_csv,
+  description: 'SRER_BGR_True_vs_Predicted',
+  folder: 'GEE_Downloads',
+  fileFormat: 'CSV'
+});
 
