@@ -27,16 +27,27 @@ var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Extract projection from the first image in the collection
 var projSent2 = sent2_ic.first().select('B2').projection();
 
-// Mosaic, clip, and select the bands we need right away (including B8 for NDVI)
+// Mosaic, clip, select bands (added B5), and APPLY SCALE FACTOR (0.0001)
 var sent2_im = sent2_ic
   .mosaic()
   .clip(v_extent)
-  .select(['B2', 'B3', 'B4', 'B8'])
+  .select(['B2', 'B3', 'B4', 'B5', 'B8'])
+  .multiply(0.0001) // Ensures prediction image matches your scaled training data
   .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-// Calculate NDVI using B8 (NIR) and B4 (Red) and add it as a new band
+// Calculate NDVI using scaled true reflectance
 var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
-sent2_im = sent2_im.addBands(ndvi);
+
+// Calculate MCARI using scaled true reflectance
+var mcari = sent2_im.expression(
+    '((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
+      'B3': sent2_im.select('B3'), // Green
+      'B4': sent2_im.select('B4'), // Red
+      'B5': sent2_im.select('B5')  // Red Edge 1
+}).rename('MCARI');
+
+// Add both NDVI and MCARI bands to the image
+sent2_im = sent2_im.addBands([ndvi, mcari]);
 
 
 var v_model = ee.Classifier.smileRandomForest({
@@ -47,7 +58,8 @@ var v_model = ee.Classifier.smileRandomForest({
   .train({
     features: fc,
       classProperty: 'BGR', 
-      inputProperties: ['B2', 'B3', 'B4', 'B8', 'NDVI']
+      // Added B5 and MCARI to the input predictors to match the new image bands
+      inputProperties: ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'] 
   });
 
 print(v_model);
@@ -56,6 +68,5 @@ var pred_im = sent2_im.classify(v_model);
 
 Map.addLayer(pred_im, {min:0, max:80, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
 //Map.addLayer(pred_im, {min:0, max:1, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
-
 
 
