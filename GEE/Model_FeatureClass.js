@@ -11,87 +11,95 @@ var v_foot_prints = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_d
 var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ecological_states')
                      .map(function(ft){
                        return ft.set('area_ha', ft.area(1).divide(10000)); 
-});
+                     });
 
-// Because bounds_geom is a Geometry, .bounds() safely returns an ee.Geometry bounding box
+// Safely returns an ee.Geometry bounding box
 var v_extent = bounds_geom.bounds();
-
-var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-  .filterBounds(v_extent)                     // FILTER LOCATION FIRST
-  .filterDate('2019-05-01', '2019-05-31');    // FILTER DATE SECOND
 
 var f_date = '2019-05-26', l_date = '2019-05-31';
 
-var projSent2 = sent2_ic.filterDate(f_date, l_date)
-                          .filterBounds(v_extent).first().select('B2').projection();
+var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+  .filterBounds(v_extent)                     // FILTER LOCATION FIRST
+  .filterDate(f_date, l_date);                // FILTER DATE SECOND
 
-var sent2_im = sent2_ic.filterDate(f_date, l_date)
-                          .filterBounds(v_extent)
-                          .mosaic()
-                          .clip(v_extent)
-                          .setDefaultProjection({crs:projSent2.crs(), scale:projSent2.nominalScale()});
-                           
+// Extract projection from the first image in the collection
+var projSent2 = sent2_ic.first().select('B2').projection();
+
+// Mosaic, clip, and select ONLY the bands we need right away
+var sent2_im = sent2_ic
+  .mosaic()
+  .clip(v_extent)
+  .select(['B2', 'B3', 'B4'])
+  .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
+
+// Generate the base Sentinel-2 pixel grid
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
 
-// This is one option to perform a spatial join
-var v_spatial_filter = ee.Filter.intersects({leftField:'.geo', rightField:'.geo', maxError:1});
+// =========================================================================
+// FAST FRACTIONAL OVERLAP WORKFLOW
+// =========================================================================
 
-// Define a save all join.
-var v_saveAllJoin = ee.Join.saveAll({matchesKey:'polys',});
+// 1. Pre-filter the grid so we don't calculate overlap on empty space
+var focused_grid = sent2_grid.filterBounds(v_srer_polys).filterBounds(v_foot_prints);
 
-// Perform spatial join of grids and polygons and keep only those grids that overlap at least 50% of footprint area.
-var v_sensor_grids = sent2_grid;             // Sentinel2 
-var v_desc = 'sent2_grids_joined';
+// 2. Create a high-resolution binary mask (1) where the footprints and polygons overlap
+var footprint_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
+var poly_mask = ee.Image.constant(0).paint(v_srer_polys, 1);
+var valid_area_mask = footprint_mask.and(poly_mask);
 
-// Apply the join.
-var v_intersect1 = v_saveAllJoin.apply(v_sensor_grids, v_foot_prints, v_spatial_filter);
-
-// Spatial join and filtering out grids with less than 100% area of overlap.
-var v_fprint_filtered = v_sensor_grids.filterBounds(v_srer_polys);
-var v_intersect = v_intersect1.map(function(feature){
-  var v_poly = feature.geometry();
-  var v_intersection = v_poly.intersection(v_foot_prints.geometry(), ee.ErrorMargin(1))
-                            .intersection(v_srer_polys.geometry(), ee.ErrorMargin(1));
-  var v_totalArea = v_poly.area(1);
-  var v_overlapped = v_intersection.area(1).divide(v_totalArea);
-  return feature.set({'overlapped': v_overlapped});
-}).map(function (ft) {  
-        return ft.set('polys',null);
-});    
-
-v_intersect = v_intersect.filter(ee.Filter.gte("overlapped", 1.0));
-
-// Adding a unique sequenced id to featureCollection
-var v_indexes = ee.List(v_intersect.aggregate_array('system:index'));
-var v_ids = ee.List.sequence(1, v_intersect.size());
-var v_idByIndex = ee.Dictionary.fromLists(v_indexes, v_ids);
-var v_datasetWithId = v_intersect.map(function(feature){
-  return feature.set('id', ee.Number(v_idByIndex.get(feature.get('system:index'))).toInt());
+// 3. Calculate the exact percentage of overlap for every grid cell.
+// By reducing a 1m resolution mask over the grid, the 'mean' equals the area fraction.
+var grid_overlap = valid_area_mask.reduceRegions({
+  collection: focused_grid,
+  reducer: ee.Reducer.mean(),
+  scale: 1, // 1m scale ensures highly accurate sub-pixel area math
+  crs: projSent2.crs(),
+  tileScale: 4
 });
 
-var v_sent2_joined_grids = v_datasetWithId;
+// 4. Filter for strict 100% overlap (using 0.99 to account for tiny floating-point rounding)
+var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
-var v_sent2_joined_grids = v_saveAllJoin.apply(v_sent2_joined_grids, v_srer_polys, v_spatial_filter)
-                                        .map(function (ft){  // Set attributes to each grid out of the polygons surveyed
-                                              var ft1 = ee.Feature(ee.List(ft.get('polys')).get(0));
-                                              return ft.set({'Plant_Comm': ft1.get('Plant_Comm'),
-                                                            'Pasture': ft1.get('Pasture'),
-                                                            'Transect': ft1.get('Transect'),
-                                                            'Utility' : ft1.get('Utility'),
-                                                            'S_Desc' : ft1.get('S_Desc'),
-                                                            'Exclosure' : ft1.get('Exclosure'),
-                                                            'area_ha': ft1.get('area_ha'),
-                                                            'polys':null,
-                                                            'overlapped':null
-                                              }); 
-                                        });  
+// 5. Transfer the polygon attributes to your perfectly overlapping grid cells
+var v_spatial_filter = ee.Filter.intersects({leftField:'.geo', rightField:'.geo', maxError:1});
+var v_saveAllJoin = ee.Join.saveAll({matchesKey:'polys'});
 
+var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
+  .map(function (ft){
+    var ft1 = ee.Feature(ee.List(ft.get('polys')).get(0));
+    return ft.set({
+      'Plant_Comm': ft1.get('Plant_Comm'),
+      'Pasture': ft1.get('Pasture'),
+      'Transect': ft1.get('Transect'),
+      'Utility': ft1.get('Utility'),
+      'S_Desc': ft1.get('S_Desc'),
+      'Exclosure': ft1.get('Exclosure'),
+      'area_ha': ft1.get('area_ha'),
+      'polys': null // clean up the temporary join list
+    });
+  });
 
+// 6. Extract the Sentinel-2 bands for these grid polygons
+var bandsToExtract = sent2_im.select(['B2', 'B3', 'B4']);
+
+var v_sent2_with_bands = bandsToExtract.reduceRegions({
+  collection: v_sent2_joined_grids,
+  reducer: ee.Reducer.mean(),
+  scale: projSent2.nominalScale(),
+  crs: projSent2.crs(),
+  tileScale: 4
+});
+
+// Clean up any potential grids that might have fallen on masked image pixels (null values)
+v_sent2_with_bands = v_sent2_with_bands.filter(ee.Filter.notNull(['B2', 'B3', 'B4']));
+
+// =========================================================================
+// EXPORT
+// =========================================================================
 
 Export.table.toAsset({
-  collection:v_sent2_joined_grids,
-  assetId:'projects/ee-andrewfullhart/assets/SR_s2_grid_joined',
-  description:'ftv_sentinel2_grid_srer_slud'
+  collection: v_sent2_with_bands,
+  assetId: 'projects/ee-andrewfullhart/assets/SR_s2_grid_joined',
+  description: 'ftv_sentinel2_grid_srer_slud'
 });
-
 
