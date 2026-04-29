@@ -61,7 +61,7 @@ var v_list_seeds = ee.List([123, 456, 789, 111, 333]);
 var fold_list = ee.List.sequence(0, 4);
 
 // Add a random column and create fold IDs (0, 1, 2, 3, 4)
-var fc_folds = fc.randomColumn('random', 42).map(function(ft) {
+var fc_folds = fc.randomColumn('random', 123).map(function(ft) {
   return ft.set('fold', ee.Number(ft.get('random')).multiply(k_folds).floor());
 });
 
