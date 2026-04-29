@@ -66,7 +66,20 @@ print(v_model);
 
 var pred_im = sent2_im.classify(v_model);
 
-Map.addLayer(pred_im, {min:0, max:80, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
+
+
+// 1. Load a DEM (SRTM)
+var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+
+// Generate the hillshade
+var hillshade = ee.Terrain.hillshade(dem, 270, 45);
+Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
+
+
+Map.addLayer(pred_im, {min:0, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']});
 //Map.addLayer(pred_im, {min:0, max:1, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
+
+
+
 
 
