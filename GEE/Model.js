@@ -49,27 +49,47 @@ var mcari = sent2_im.expression(
 // Add both NDVI and MCARI bands to the image
 sent2_im = sent2_im.addBands([ndvi, mcari]);
 
+// =========================================================================
+// MODEL TRAINING & PREDICTION
+// =========================================================================
 
-var v_model = ee.Classifier.smileRandomForest({
-  numberOfTrees: 500,
-  minLeafPopulation: 5,
-  seed: 123,
-  }).setOutputMode('REGRESSION')
-  .train({
-    features: fc,
-      classProperty: 'BGR',
-      inputProperties: ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'] 
-  });
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'];
 
-var pred_im = sent2_im.classify(v_model);
+// Train Model 1: BGR
+var model_bgr = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
+  .setOutputMode('REGRESSION')
+  .train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
+
+// Train Model 2: LPI
+var model_lpi = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
+  .setOutputMode('REGRESSION')
+  .train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
+
+// Train Model 3: MFT
+var model_mft = ee.Classifier.smileRandomForest({numberOfTrees: 500, minLeafPopulation: 5, seed: 123})
+  .setOutputMode('REGRESSION')
+  .train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
+
+// Classify the image for each variable and explicitly rename the output bands
+var pred_bgr = sent2_im.classify(model_bgr).rename('Pred_BGR');
+var pred_lpi = sent2_im.classify(model_lpi).rename('Pred_LPI');
+var pred_mft = sent2_im.classify(model_mft).rename('Pred_MFT');
+
+// Combine the three prediction bands into a single image
+var combined_preds = ee.Image([pred_bgr, pred_lpi, pred_mft]);
+
+
+// =========================================================================
+// VISUALIZATION
+// =========================================================================
 
 // Generate hillshade
 var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
 
-Map.addLayer(pred_im, {min:0, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']});
-//Map.addLayer(pred_im, {min:0, max:1, palette:['#487d4a', '#3EB489', '#FAC05B', '#964B00']});
+// Visualizing just the BGR prediction for reference
+Map.addLayer(pred_bgr, {min:0, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']}, 'Predicted BGR');
 
 
 // =========================================================================
@@ -81,30 +101,32 @@ var fc_centers = fc.map(function(ft) {
   return ft.centroid(1); // 1m max error for centroid calculation
 });
 
-// Sample the predicted image at these exact center points.
-// sampleRegions will extract the predicted value (default band name is 'classification')
-// and keep the true 'BGR' value from the input collection.
-var sampled_data = pred_im.sampleRegions({
+// Sample the combined prediction image at these exact center points.
+// We also retain the true 'BGR', 'LPI', and 'MFT' values from the training points.
+var sampled_data = combined_preds.sampleRegions({
   collection: fc_centers,
-  properties: ['BGR'], // Retain the True BGR from your training points
+  properties: ['BGR', 'LPI', 'MFT'], // Retain the True values
   scale: projSent2.nominalScale(), // Matches the 10m Sentinel-2 scale
   tileScale: 4
 });
 
 // Format the collection for a clean CSV export
 var export_csv = sampled_data.map(function(ft) {
-  // We return a Feature with null geometry so the CSV doesn't get bloated 
-  // with GeoJSON coordinate strings, keeping it clean for tabular analysis.
+  // Return a Feature with null geometry for a clean tabular CSV
   return ee.Feature(null, { 
     'True_BGR': ft.get('BGR'),
-    'Predicted_BGR': ft.get('classification') // output band name of an RF regression
+    'Predicted_BGR': ft.get('Pred_BGR'),
+    'True_LPI': ft.get('LPI'),
+    'Predicted_LPI': ft.get('Pred_LPI'),
+    'True_MFT': ft.get('MFT'),
+    'Predicted_MFT': ft.get('Pred_MFT')
   });
 });
 
 // Export the table to Google Drive as a CSV
 Export.table.toDrive({
   collection: export_csv,
-  description: 'SRER_BGR_True_vs_Predicted',
+  description: 'SRER_Metrics_True_vs_Predicted',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
