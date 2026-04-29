@@ -25,12 +25,16 @@ var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Extract projection from the first image in the collection
 var projSent2 = sent2_ic.first().select('B2').projection();
 
-// Mosaic, clip, and select ONLY the bands we need right away
+// Mosaic, clip, and select the bands we need (including B8 for NDVI)
 var sent2_im = sent2_ic
   .mosaic()
   .clip(v_extent)
-  .select(['B2', 'B3', 'B4'])
+  .select(['B2', 'B3', 'B4', 'B8'])
   .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
+
+// Calculate NDVI and add it as a new band to the image
+var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
+sent2_im = sent2_im.addBands(ndvi);
 
 // Generate the base Sentinel-2 pixel grid
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
@@ -79,8 +83,8 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
     });
   });
 
-// 6. Extract the Sentinel-2 bands for these grid polygons
-var bandsToExtract = sent2_im.select(['B2', 'B3', 'B4']);
+// 6. Extract the Sentinel-2 bands and NDVI for these grid polygons
+var bandsToExtract = sent2_im.select(['B2', 'B3', 'B4', 'B8', 'NDVI']);
 
 var v_sent2_with_bands = bandsToExtract.reduceRegions({
   collection: v_sent2_joined_grids,
@@ -91,9 +95,7 @@ var v_sent2_with_bands = bandsToExtract.reduceRegions({
 });
 
 // Clean up any potential grids that might have fallen on masked image pixels (null values)
-v_sent2_with_bands = v_sent2_with_bands.filter(ee.Filter.notNull(['B2', 'B3', 'B4']));
-
-
+v_sent2_with_bands = v_sent2_with_bands.filter(ee.Filter.notNull(['B2', 'B3', 'B4', 'B8', 'NDVI']));
 
 // =========================================================================
 // EXPORT
