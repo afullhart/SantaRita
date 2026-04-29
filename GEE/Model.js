@@ -57,7 +57,7 @@ var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI'];
 // =========================================================================
 
 var k_folds = 5;
-var v_list_seeds = ee.List([123, 456, 789, 101, 333]);
+var v_list_seeds = ee.List([123, 456, 789, 111, 333]);
 var fold_list = ee.List.sequence(0, 4);
 
 // Add a random column and create fold IDs (0, 1, 2, 3, 4)
