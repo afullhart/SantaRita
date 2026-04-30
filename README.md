@@ -4,7 +4,7 @@ graph TD;
     B --> C[Model_Regressions.js];
 ```
 
-### Script Annotations
+### Scripts
 * **`Model_Feature.js`**: Generates 10m Sentinel-2 grid polygon asset that is filtered by spatial overlap with footprints. Adds properties for Sentinel-2 band values, NDVI, and MCARI.
 * **`Feature_Values.js`**: Calculates 5cm BGR, LPI, and MFT and adds them to the feature class asset.
 * **`Model_Regressions.js`**: Executes K-folds cross-validation and final models, visualizes predictions, and exports predicted vs. true values.
