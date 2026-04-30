@@ -144,18 +144,6 @@ var pred_mft = sent2_im.classify(model_mft).rename('Pred_MFT');
 var combined_preds = ee.Image([pred_bgr, pred_lpi, pred_mft]);
 
 
-// =========================================================================
-// VISUALIZATION
-// =========================================================================
-
-// Generate hillshade
-var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
-var hillshade = ee.Terrain.hillshade(dem, 270, 45);
-Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
-
-// Visualizing just the BGR prediction for reference
-Map.addLayer(pred_bgr, {min:0, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']}, 'Predicted BGR');
-
 
 // =========================================================================
 // SAMPLING & CSV EXPORT
@@ -195,3 +183,55 @@ Export.table.toDrive({
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
+
+
+
+// =========================================================================
+// VISUALIZATION
+// =========================================================================
+
+var pred_im = pred_bgr;
+
+// Generate hillshade
+var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+var hillshade = ee.Terrain.hillshade(dem, 270, 45);
+Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
+
+
+//HSV Hillshade method
+// Turn prediction into a baked RGB image (outputs values 0-255)
+var pred_visualized = pred_im.visualize({
+  min: 0, 
+  max: 80, 
+  palette: ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']
+});
+
+// Normalize the hillshade to a 0.0 - 1.0 scale
+var hillshade_norm = hillshade.divide(255.0);
+
+// Normalize the RGB image to 0.0 - 1.0, THEN convert to HSV
+var hsv_image = pred_visualized.divide(255.0).rgbToHsv();
+
+// Recombine: Boost saturation and blend the hillshade with the original value
+var draped_hsv = ee.Image.cat([
+  hsv_image.select('hue'),
+  
+  // Boost the color saturation by 20% and clamp it so it doesn't exceed 1.0
+  hsv_image.select('saturation').multiply(1.2).clamp(0, 1), 
+  
+  // Blend the original color's brightness (40%) with the hillshade (60%)
+  hsv_image.select('value').multiply(0.4).add(hillshade_norm.multiply(0.6)) 
+]);
+
+// Convert back to RGB (outputs 0.0 - 1.0 range, which Map.addLayer handles perfectly)
+var final_draped_rgb = draped_hsv.hsvToRgb();
+
+Map.addLayer(final_draped_rgb, {}, 'Draped BGR (HSV Method)');
+
+// Visualizing just the BGR prediction for reference
+//Map.addLayer(pred_im, {min:5, max:80, palette:['#487d4a', '#3EB489', '#B8EF80', '#FAC05B', '#964B00']}, 'Predicted');
+//Map.addLayer(pred_im, {min:5, max:80, palette:['#00204d', '#31446b', '#666970', '#958f78', '#cbb67a', '#ffea46']}, 'Predicted');
+//Map.addLayer(pred_im, {min:5, max:80, palette:['#440154', '#3b528b', '#21918c', '#5ec962', '#fde725']}, 'Predicted');
+Map.addLayer(pred_im, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']}, 'Predicted');
+
+Map.addLayer(bounds_fc);
