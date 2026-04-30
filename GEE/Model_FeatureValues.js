@@ -24,14 +24,12 @@ var v_sent2_joined_grids = ee.FeatureCollection('projects/ee-andrewfullhart/asse
 
 print(v_sent2_joined_grids.size());
 
-//function calculateLPI(classified_img, grid_collection, period_name) {
 var classified_img = v_classified_may;
 var grid_collection = v_sent2_joined_grids;
 var period_name = ee.String('May');
 
 var binary = classified_img.eq(3).selfMask();
 
-//function gridcell_iter_fn(){
 var native_proj = v_classified_may.projection();
 
 function feat_iteration_fn(ft){
@@ -48,7 +46,7 @@ function feat_iteration_fn(ft){
    }).get('classification');
   var v_pct_area = ee.Number(v_area).divide(v_area_ft).multiply(100);
 
-  // 1. Convert the binary 5cm raster mask directly into vector polygons
+  // Convert the binary 5cm raster mask directly into vector polygons
   var patch_vectors = binary.reduceToVectors({
     reducer: ee.Reducer.countEvery(),
     geometry: ft.geometry(),        // The area to process
@@ -61,7 +59,7 @@ function feat_iteration_fn(ft){
     tileScale: 16                   // Prevent memory crashes during tile extraction
   });
 
-  // 2. Calculate the true physical area of every native-resolution polygon
+  // Calculate the true physical area of every native-resolution polygon
   var patches_with_area = patch_vectors.map(function(ft){
     return ft.set('area_sqm', ft.area(0.05)); // Calculate area with 5cm error margin
   });
@@ -93,7 +91,7 @@ var final_grids = v_sent2_joined_grids.map(feat_iteration_fn);
 
 print(final_grids.first());
 
-// 5. Export the results
+// Export the results
 Export.table.toDrive({
   collection: final_grids,
   description: 'Native_5cm_LPI_Vectors',
