@@ -1,6 +1,6 @@
 ```mermaid
 graph TD;
-    A[Model_Feature.js] --> B[Feature_Values.js];
+    A[Model_FeatureClass.js] --> B[Model_FeatureValues.js];
     B --> C[Model_Regressions.js];
 ```
 
