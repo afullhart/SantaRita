@@ -186,11 +186,16 @@ function processMonthMetrics(grid_subset, classified_img) {
         scale: 0.05
       });
       
-      // 4. Remove points that landed outside bare ground (they return null due to the mask)
+      // 4. Remove points that landed outside bare ground
       var valid_points = v_points.filter(ee.Filter.notNull(['distance']));
       
-      // 5. Calculate the true mean fetch
-      return ee.Number(valid_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean'));
+      // 5. Attempt to calculate the true mean fetch
+      var raw_mean = valid_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean');
+
+      // 6. SAFEGUARD: If raw_mean is null (0 points hit bare ground), convert to 0
+      var final_mean = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_mean, null), 0, raw_mean);
+
+      return ee.Number(final_mean);
     }
 
     var N_PTS = 1000;
@@ -226,4 +231,3 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'ftv_sentinel2_grid_srer_slud_may_sep_combined_utm'
 });
-
