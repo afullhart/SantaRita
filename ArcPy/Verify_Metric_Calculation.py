@@ -3,11 +3,11 @@ import os
 from arcpy.sa import *
 
 # 1. Your input coordinates in Decimal Degrees (Longitude, Latitude)
-coords = [[[-110.83762403082939, 31.80307796655539],
-           [-110.83751916608755, 31.803077820346026],
-           [-110.83751898418859, 31.80316738233383],
-           [-110.83762384893045, 31.803167528501636],
-           [-110.83762403082939, 31.80307796655539]]]
+coords = [[[-110.8376236670315, 31.80316647982381],
+           [-110.83762375798096, 31.803076268958048],
+           [-110.83751816564339, 31.80307616372741],
+           [-110.83751798374443, 31.803166390139502],
+           [-110.8376236670315, 31.80316647982381]]]
 
 # Access the default geodatabase of the current ArcGIS Pro project
 aprx = arcpy.mp.ArcGISProject("CURRENT")
@@ -163,6 +163,7 @@ print("Calculating Sampled Mean Fetch (1000 Random Points)...")
 
 # Create 1000 random points within the boundaries of the test polygon
 random_points_fc = "Fetch_RandomPoints"
+arcpy.env.randomGenerator = "1234 ACM599"
 arcpy.management.CreateRandomPoints(
     out_path=default_gdb,
     out_name=random_points_fc,
@@ -187,8 +188,8 @@ valid_points_sampled = 0
 with arcpy.da.SearchCursor(extracted_points_fc, ["RASTERVALU"]) as cursor:
     for row in cursor:
         val = row[0]
-        # Ignore NoData (-9999) or nulls
-        if val is not None and val != -9999:
+        # ---> THE FIX: Mathematically align with Map Algebra by ignoring 0 values
+        if val is not None and val > 0:
             total_fetch_sampled += val
             valid_points_sampled += 1
 
