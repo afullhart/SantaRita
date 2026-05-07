@@ -71,6 +71,16 @@ function buildS2Composite(startDate, endDate) {
 var sent2_may = buildS2Composite(may_start, may_end);
 var sent2_sep = buildS2Composite(sep_start, sep_end);
 
+var rgbVis = {
+  bands: ['B4', 'B3', 'B2'],
+  min: 0.0,
+  max: 0.3, 
+  gamma: 1.4
+};
+
+Map.addLayer(sent2_sep.select('B4', 'B3', 'B2'), rgbVis, 'image');
+
+
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
 
 
