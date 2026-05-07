@@ -1,3 +1,19 @@
+// =========================================================================
+// USER INPUTS & DATES
+// =========================================================================
+
+// Dry Season (Pre-Monsoon) Dates
+var may_start = '2019-05-26';
+var may_end   = '2019-05-31';
+
+// Post-Monsoon Dates
+var sep_start = '2019-09-10';
+var sep_end   = '2019-09-20';
+
+// =========================================================================
+// SETUP & ASSETS
+// =========================================================================
+
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 
 // Extract the raw Geometry from the first feature directly
@@ -70,7 +86,7 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
   });
 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 BANDS
+// PART 2: EXTRACT SENTINEL-2 BANDS, INDICES & TOPOGRAPHY
 // =========================================================================
 
 function extractS2Data(startDate, endDate, monthLabel) {
@@ -78,10 +94,11 @@ function extractS2Data(startDate, endDate, monthLabel) {
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate);                
 
+  // Added B11 and B12 here
   var sent2_im = sent2_ic
     .mosaic()
     .clip(v_extent)
-    .select(['B2', 'B3', 'B4', 'B5', 'B8'])
+    .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
@@ -94,9 +111,30 @@ function extractS2Data(startDate, endDate, monthLabel) {
         'B5': sent2_im.select('B5')  
   }).rename('MCARI');
 
-  sent2_im = sent2_im.addBands([ndvi, mcari]);
+  // Calculate Bare Soil Index (BSI)
+  var bsi = sent2_im.expression(
+      '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
+        'B2':  sent2_im.select('B2'),
+        'B4':  sent2_im.select('B4'),
+        'B8':  sent2_im.select('B8'),
+        'B11': sent2_im.select('B11')
+  }).rename('BSI');
+
+  // Calculate Normalized Burn Ratio 2 (NBR2)
+  var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
+
+  // Calculate Slope from USGS 3DEP 10m DEM
+  var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+  var slope = ee.Terrain.slope(dem).rename('Slope');
+
+  // Add all indices and slope back to the image
+  sent2_im = sent2_im.addBands([ndvi, mcari, bsi, nbr2, slope]);
   
-  var bandsToExtract = sent2_im.select(['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI']);
+  // Define exactly what to extract so it gets attached to the grid features
+  var bandsToExtract = sent2_im.select([
+    'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
+    'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'
+  ]);
 
   var gridWithMonth = v_sent2_joined_grids.map(function(feat) {
     return feat.set('Month', monthLabel);
@@ -110,15 +148,21 @@ function extractS2Data(startDate, endDate, monthLabel) {
     tileScale: 4
   });
 
-  return extracted.filter(ee.Filter.notNull(['B2', 'B3', 'B4', 'B5', 'B8', 'NDVI', 'MCARI']));
+  // Filter out any cells that fall outside the satellite/DEM coverage
+  return extracted.filter(ee.Filter.notNull([
+    'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
+    'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'
+  ]));
 }
 
-var may_s2_data = extractS2Data('2019-05-26', '2019-05-31', 'May');
-var sep_s2_data = extractS2Data('2019-09-01', '2019-09-30', 'Sept');
+// Pass the variables from the top of the script into the extraction function
+var may_s2_data = extractS2Data(may_start, may_end, 'May');
+var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept');
 
 // Force the grid geometries into UTM Zone 12N (Meters)
 var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
 var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
+
 
 // =========================================================================
 // PART 3: DRONE METRICS (BGR, LPI, MFT)
@@ -136,7 +180,6 @@ function processMonthMetrics(grid_subset, classified_img) {
     // --- BGR Calculation ---
     var v_area_image = binary.multiply(ee.Image.pixelArea());
     
-    // Error margin of 0.05 handles the complex polygon bounds without Error 3
     var v_area_ft = ft.area(0.05); 
     
     var v_area = v_area_image.reduceRegion({
@@ -173,26 +216,17 @@ function processMonthMetrics(grid_subset, classified_img) {
 
     // --- MFT Calculation ---
     function Get_Mean_Fetch(obstacle_mask, bare_mask, v_points) {
-      // 1. Calculate distance TO vegetation
       var v_distance = obstacle_mask.fastDistanceTransform().sqrt().multiply(ee.Image.pixelArea().sqrt()).rename("distance");
-      
-      // 2. Mask the distance surface so we only measure fetch ACROSS bare ground
       var fetch_on_bare = v_distance.updateMask(bare_mask);
 
-      // 3. Extract values to random points
       v_points = fetch_on_bare.reduceRegions({
         collection: v_points,
         reducer: ee.Reducer.first().setOutputs(["distance"]),
         scale: 0.05
       });
       
-      // 4. Remove points that landed outside bare ground
       var valid_points = v_points.filter(ee.Filter.notNull(['distance']));
-      
-      // 5. Attempt to calculate the true mean fetch
       var raw_mean = valid_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean');
-
-      // 6. SAFEGUARD: If raw_mean is null (0 points hit bare ground), convert to 0
       var final_mean = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_mean, null), 0, raw_mean);
 
       return ee.Number(final_mean);
@@ -201,9 +235,10 @@ function processMonthMetrics(grid_subset, classified_img) {
     var N_PTS = 1000;
     var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1234, 0.05);
     
-    // Pass the obstacles (to measure distance to) and binary (to mask the sample area)
     var v_nearestMeanValues = Get_Mean_Fetch(obstacles, binary, v_rnd);
 
+    // Because ft already contains B11, BSI, Slope, etc. from extractS2Data, 
+    // we just append the 3 new structural metrics and return it.
     return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
   });
 }
@@ -231,3 +266,5 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'ftv_sentinel2_grid_srer_slud_may_sep_combined_utm'
 });
+
+
