@@ -116,7 +116,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
 var may_s2_data = extractS2Data('2019-05-26', '2019-05-31', 'May');
 var sep_s2_data = extractS2Data('2019-09-01', '2019-09-30', 'Sept');
 
-// ---> THE GOLD STANDARD: Force the grid geometries into UTM Zone 12N (Meters) <---
+// Force the grid geometries into UTM Zone 12N (Meters)
 var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
 var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
 
@@ -171,7 +171,7 @@ function processMonthMetrics(grid_subset, classified_img) {
       0
     );
 
-    // --- MFT Calculation (FIXED LOGIC) ---
+    // --- MFT Calculation ---
     function Get_Mean_Fetch(obstacle_mask, bare_mask, v_points) {
       // 1. Calculate distance TO vegetation
       var v_distance = obstacle_mask.fastDistanceTransform().sqrt().multiply(ee.Image.pixelArea().sqrt()).rename("distance");
