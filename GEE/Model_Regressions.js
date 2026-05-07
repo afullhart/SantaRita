@@ -285,7 +285,7 @@ Export.table.toDrive({
 // VISUALIZATION
 // =========================================================================
 
-// Generate hillshade
+// Generate hillshade (This is the only layer set to show by default)
 var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 Map.addLayer(hillshade, {min: 0, max: 255}, 'Hillshade');
@@ -294,21 +294,33 @@ var hillshade_norm = hillshade.divide(255.0);
 
 // Visualize May Predictions
 var pred_im_may = combined_preds_may.select('Pred_BGR');
-var hsv_image = pred_im_may.visualize({
+var hsv_image_may = pred_im_may.visualize({
   min: 0, max: 80, palette: ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']
 }).divide(255.0).rgbToHsv();
 
-var draped_hsv = ee.Image.cat([
-  hsv_image.select('hue'),
-  hsv_image.select('saturation').multiply(1.2).clamp(0, 1), 
-  hsv_image.select('value').multiply(0.4).add(hillshade_norm.multiply(0.6)) 
+var draped_hsv_may = ee.Image.cat([
+  hsv_image_may.select('hue'),
+  hsv_image_may.select('saturation').multiply(1.2).clamp(0, 1), 
+  hsv_image_may.select('value').multiply(0.4).add(hillshade_norm.multiply(0.6)) 
 ]);
 
-Map.addLayer(draped_hsv.hsvToRgb(), {}, 'Draped BGR (May)', false);
-Map.addLayer(pred_im_may, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']}, 'Predicted BGR (May)');
+Map.addLayer(draped_hsv_may.hsvToRgb(), {}, 'Draped BGR (May)', false);
+Map.addLayer(pred_im_may, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']}, 'Predicted BGR (May)', false);
 
-// Visualize September Predictions (Off by default to avoid clutter)
+// Visualize September Predictions
 var pred_im_sep = combined_preds_sep.select('Pred_BGR');
+var hsv_image_sep = pred_im_sep.visualize({
+  min: 0, max: 80, palette: ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']
+}).divide(255.0).rgbToHsv();
+
+var draped_hsv_sep = ee.Image.cat([
+  hsv_image_sep.select('hue'),
+  hsv_image_sep.select('saturation').multiply(1.2).clamp(0, 1), 
+  hsv_image_sep.select('value').multiply(0.4).add(hillshade_norm.multiply(0.6)) 
+]);
+
+Map.addLayer(draped_hsv_sep.hsvToRgb(), {}, 'Draped BGR (Sept)', false);
 Map.addLayer(pred_im_sep, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027']}, 'Predicted BGR (Sept)', false);
 
-Map.addLayer(bounds_fc);
+// Boundary Layer
+Map.addLayer(bounds_fc, {}, 'SR_bounds', false);
