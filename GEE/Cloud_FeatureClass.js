@@ -14,7 +14,7 @@ var bounds_geom = bounds_fc.first().geometry();
 
 // Define the historical period to analyze
 var start_year = 2018; // Sentinel-2 SR data becomes robust globally around 2018
-var end_year = 2023; 
+var end_year = 2025;   
 
 // Build a client-side array of years so we can loop over them later to generate individual charts
 var clientYears = [];
@@ -82,7 +82,8 @@ var allBestWindowsList = years.map(function(y) {
       // We must calculate a timestamp to sort the final collection chronologically
       var timeStart = startDate.millis();
       
-      return ee.Feature(null, {
+      // ---> THE FIX IS HERE: Replacing 'null' with 'bounds_geom' <---
+      return ee.Feature(bounds_geom, {
         'Year': y,
         'Month': m,
         'Start_Date': startDate.format('YYYY-MM-dd'),
@@ -152,4 +153,12 @@ Export.table.toDrive({
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
+
+// Export the Feature Collection directly to an Earth Engine Asset
+Export.table.toAsset({
+  collection: bestWindowsFc,
+  description: 'Export_Cloud_FeatureClass_Asset',
+  assetId: 'projects/ee-andrewfullhart/assets/Cloud_FeatureClass'
+});
+
 
