@@ -7,8 +7,8 @@ var may_start = '2019-05-26';
 var may_end   = '2019-05-31';
 
 // Post-Monsoon Dates
-var sep_start = '2019-09-24';
-var sep_end   = '2019-09-30';
+var sep_start = '2019-09-10';
+var sep_end   = '2019-09-20';
 
 // =========================================================================
 // SETUP & ASSETS
@@ -64,7 +64,12 @@ function buildS2Composite(startDate, endDate) {
 
   var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  return sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
+  // Calculate Slope from USGS 3DEP 10m DEM
+  var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+  var slope = ee.Terrain.slope(dem).rename('Slope');
+
+  // Add all indices AND Slope to the image
+  return sent2_im.addBands([ndvi, mcari, bsi, nbr2, slope]);
 }
 
 // Build the two distinct seasonal predictor maps
@@ -78,10 +83,10 @@ var rgbVis = {
   gamma: 1.4
 };
 
-Map.addLayer(sent2_sep.select('B4', 'B3', 'B2'), rgbVis, 'image');
+Map.addLayer(sent2_sep.select('B4', 'B3', 'B2'), rgbVis, 'Sentinel-2 RGB (Sept)', false);
 
-
-var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
+// ---> ADDED SLOPE TO THE INPUT PROPERTIES <---
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'];
 
 
 // =========================================================================
@@ -334,3 +339,5 @@ Map.addLayer(pred_im_sep, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef
 
 // Boundary Layer
 Map.addLayer(bounds_fc, {}, 'SR_bounds', false);
+
+
