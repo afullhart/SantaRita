@@ -46,9 +46,9 @@ try:
     in_raster = Int(temp_raster)
 
     # ====================================================================
-    # METRICS
+    # CORE METRICS (BGR, LPI, FETCH)
     # ====================================================================
-    print("Calculating Metrics...")
+    print("Calculating Core Metrics...")
     target_value = 3 
     
     # BGR
@@ -75,10 +75,75 @@ try:
     valid_fetch = fetch_array[fetch_array > 0]
     mean_fetch_exact = np.mean(valid_fetch) if valid_fetch.size > 0 else 0.0
 
+
+    # ====================================================================
+    # RAP CANOPY GAP FRACTIONS
+    # ====================================================================
+    print("Calculating Canopy Gap Fractions...")
+    
+    # We want 10 transects in each direction. 
+    # 200 pixels / 10 = spacing of 20 pixels (1 meter apart).
+    # We offset by 10 pixels to place the transects in the middle of each 1m strip.
+    transect_indices = np.arange(10, 200, 20)
+
+    # Sample EVERY row and EVERY column (200 horizontal + 200 vertical = 400 transects)
+    #transect_indices = np.arange(0, 200, 1)
+    
+    horizontal_transects = [main_array[i, :] for i in transect_indices]
+    vertical_transects = [main_array[:, j] for j in transect_indices]
+
+    all_transects = horizontal_transects + vertical_transects
+    total_transect_length_m = len(all_transects) * (ncols * cell_size) # 20 * 10m = 200m
+
+    def get_gap_lengths(transect_array, gap_val, p_size):
+        """Finds contiguous segments of bare ground and returns their lengths in meters."""
+        is_gap = (transect_array == gap_val)
+        # Pad with False to ensure gaps touching the grid boundary are captured
+        padded = np.concatenate(([False], is_gap, [False]))
+        diffs = np.diff(padded.astype(int))
+        starts = np.where(diffs == 1)[0]
+        ends = np.where(diffs == -1)[0]
+        return (ends - starts) * p_size
+
+    all_gap_lengths = []
+    for t in all_transects:
+        gaps = get_gap_lengths(t, target_value, cell_size)
+        all_gap_lengths.extend(gaps)
+
+    all_gap_lengths = np.array(all_gap_lengths)
+
+    # Bin the gaps into the RAP classes (Updated for Mutually Exclusive 0-24cm)
+    class_0_24    = all_gap_lengths[(all_gap_lengths < 0.25)]
+    class_25_50   = all_gap_lengths[(all_gap_lengths >= 0.25) & (all_gap_lengths <= 0.50)]
+    class_51_100  = all_gap_lengths[(all_gap_lengths >= 0.51) & (all_gap_lengths <= 1.00)]
+    class_101_200 = all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]
+    class_gt_200  = all_gap_lengths[(all_gap_lengths > 2.00)]
+
+    # Calculate fractions
+    fraction_0_24    = (np.sum(class_0_24) / total_transect_length_m) * 100
+    fraction_25_50   = (np.sum(class_25_50) / total_transect_length_m) * 100
+    fraction_51_100  = (np.sum(class_51_100) / total_transect_length_m) * 100
+    fraction_101_200 = (np.sum(class_101_200) / total_transect_length_m) * 100
+    fraction_gt_200  = (np.sum(class_gt_200) / total_transect_length_m) * 100
+
+    # ====================================================================
+    # FINAL RESULTS
+    # ====================================================================
     print(f"\n--- Final Site Results ---")
     print(f"BGR: {bgr_percent:.4f}%")
     print(f"LPI: {lpi_percent:.4f}%")
     print(f"Mean Fetch: {mean_fetch_exact:.6f} m")
+    
+    print(f"\n--- Canopy Gap Fractions ---")
+    print(f"Gap 0-24 cm:    {fraction_0_24:.4f}%")
+    print(f"Gap 25-50 cm:   {fraction_25_50:.4f}%")
+    print(f"Gap 51-100 cm:  {fraction_51_100:.4f}%")
+    print(f"Gap 101-200 cm: {fraction_101_200:.4f}%")
+    print(f"Gap > 200 cm:   {fraction_gt_200:.4f}%")
+
+    total_gaps = fraction_0_24 + fraction_25_50 + fraction_51_100 + fraction_101_200 + fraction_gt_200
+    print(f"-----------------------------")
+    print(f"Total Gap Fraction: {total_gaps:.4f}%")
 
 except Exception as e:
     print(f"An error occurred: {e}")
@@ -86,4 +151,3 @@ except Exception as e:
 finally:
     arcpy.management.Delete("memory")
     arcpy.CheckInExtension("Spatial")
-    
