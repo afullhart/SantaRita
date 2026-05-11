@@ -159,9 +159,9 @@ function extractS2Data(startDate, endDate, monthLabel) {
 var may_s2_data = extractS2Data(may_start, may_end, 'May');
 var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept');
 
-// Force the grid geometries into UTM Zone 12N (Meters)
-var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
-var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:26912', 0.05); });
+// Force the grid geometries into WGS84 UTM Zone 12N (Meters)
+var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
+var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 
 
 // =========================================================================
