@@ -100,7 +100,7 @@ if __name__ == '__main__':
     in_dataset=input_gee_shapefile, 
     out_dataset=projected_grid, 
     out_coor_system=spatial_ref_nad83, 
-    transform_method='WGS_1984_(ITRF00)_To_NAD_1983'
+    transform_method='' #Leave empty to match GEE's null datum transformation for plate tectonics
   )
 
   arcpy.management.CopyFeatures(projected_grid, output_fc)
@@ -112,19 +112,19 @@ if __name__ == '__main__':
   cell_size = float(arcpy.management.GetRasterProperties(source_tiff, 'CELLSIZEX').getOutput(0))
 
   # --- 1. Gather all tasks ---
-  print("Reading grid boundaries...")
+  print('Reading grid boundaries...')
   tasks = []
-  with arcpy.da.SearchCursor(output_fc, ["OID@", "SHAPE@"]) as cursor:
+  with arcpy.da.SearchCursor(output_fc, ['OID@', 'SHAPE@']) as cursor:
     for oid, geom in cursor:
       ext = geom.extent
       # Create a "packet" of data for each grid cell to send to a CPU core
       tasks.append((oid, ext.XMin, ext.YMin, ext.XMax, ext.YMax, source_tiff, cell_size))
 
   total_cells = len(tasks)
-  print(f"Found {total_cells} cells to process.")
+  print(f'Found {total_cells} cells to process.')
   
   # --- 2. MULTIPROCESSING: Distribute tasks to all available CPU cores ---
-  print(f"Spinning up {multiprocessing.cpu_count()} CPU cores. Hold on tight...")
+  print(f'Spinaning up {multiprocessing.cpu_count()} CPU cores. Hold on tight...')
   results_dict = {}
   
   with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -135,11 +135,11 @@ if __name__ == '__main__':
         results_dict[oid] = metrics
       
       if count % 1000 == 0:
-        print(f"Processed {count} / {total_cells} cells...")
+        print(f'Processed {count} / {total_cells} cells...')
 
   # --- 3. Write results back to the geodatabase ---
-  print("Writing results back to the Feature Class attribute table...")
-  update_fields = ["OID@"] + new_fields
+  print('Writing results back to the Feature Class attribute table...')
+  update_fields = ['OID@'] + new_fields
   with arcpy.da.UpdateCursor(output_fc, update_fields) as cursor:
     for row in cursor:
       oid = row[0]
