@@ -256,7 +256,7 @@ var final_combined = final_may.merge(final_sep);
 
 Export.table.toDrive({
   collection: final_combined,
-  description: 'Native_5cm_LPI_Vectors_May_Sep_UTM',
+  description: 'CSV_table',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
@@ -264,7 +264,7 @@ Export.table.toDrive({
 Export.table.toAsset({
   collection: final_combined,
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
-  description: 'ftv_sentinel2_grid_srer_slud_may_sep_combined_utm'
+  description: 'FC_asset'
 });
 
 
