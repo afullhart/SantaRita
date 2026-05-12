@@ -64,12 +64,8 @@ function buildS2Composite(startDate, endDate) {
 
   var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  // Calculate Slope from USGS 3DEP 10m DEM
-  var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
-  var slope = ee.Terrain.slope(dem).rename('Slope');
-
-  // Add all indices AND Slope to the image
-  return sent2_im.addBands([ndvi, mcari, bsi, nbr2, slope]);
+  // Add all indices to the image (Slope removed)
+  return sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
 }
 
 // Build the two distinct seasonal predictor maps
@@ -85,8 +81,8 @@ var rgbVis = {
 
 Map.addLayer(sent2_sep.select('B4', 'B3', 'B2'), rgbVis, 'Sentinel-2 RGB (Sept)', false);
 
-// ---> ADDED SLOPE TO THE INPUT PROPERTIES <---
-var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'];
+// ---> REMOVED SLOPE FROM THE INPUT PROPERTIES <---
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
 
 
 // =========================================================================
@@ -229,7 +225,7 @@ print('------------------------------------------------');
 
 
 // -------------------------------------------------------------------------
-// CLASSIFY SEASONAL IMAGES
+// CLASSIFY SEASONAL IMAGES (FOR VISUALIZATION ONLY)
 // -------------------------------------------------------------------------
 
 // Classify May and Sept composite images using the SAME unified models
@@ -245,38 +241,29 @@ var combined_preds_sep = ee.Image([p_bgr_sep, p_lpi_sep, p_mft_sep]);
 
 
 // =========================================================================
-// SEASON-AWARE SAMPLING & CSV EXPORT
+// SEASON-AWARE EXPORT (MATCHES CONSOLE EXACTLY)
 // =========================================================================
 
-// Convert the grid features to point geometries located at their centers
-var fc_centers = fc.map(function(ft) {
-  return ft.centroid(1); 
-});
+// 1. Separate the datasets by month
+var fc_may = fc.filter(ee.Filter.eq('Month', 'May'));
+var fc_sep = fc.filter(ee.Filter.eq('Month', 'Sept'));
 
-// 1. Re-split the geometric centers by month
-var centers_may = fc_centers.filter(ee.Filter.eq('Month', 'May'));
-var centers_sep = fc_centers.filter(ee.Filter.eq('Month', 'Sept'));
+// 2. Classify the feature collections directly (Identical to console method)
+function predictFeatures(dataset) {
+  var p_bgr = dataset.classify({classifier: model_bgr, outputName: 'Pred_BGR'});
+  var p_lpi = p_bgr.classify({classifier: model_lpi, outputName: 'Pred_LPI'});
+  var p_mft = p_lpi.classify({classifier: model_mft, outputName: 'Pred_MFT'});
+  return p_mft;
+}
 
-// 2. Sample the respective prediction maps using the accurately dated points
-var sampled_may = combined_preds_may.sampleRegions({
-  collection: centers_may,
-  properties: ['BGR', 'LPI', 'MFT', 'Month'],
-  scale: projSent2.nominalScale(),
-  tileScale: 4
-});
-
-var sampled_sep = combined_preds_sep.sampleRegions({
-  collection: centers_sep,
-  properties: ['BGR', 'LPI', 'MFT', 'Month'], 
-  scale: projSent2.nominalScale(), 
-  tileScale: 4
-});
+var predicted_may = predictFeatures(fc_may);
+var predicted_sep = predictFeatures(fc_sep);
 
 // 3. Merge them back together for a clean, unified export
-var sampled_data_merged = sampled_may.merge(sampled_sep);
+var final_predictions = predicted_may.merge(predicted_sep);
 
 // 4. Format for CSV
-var export_csv = sampled_data_merged.map(function(ft) {
+var export_csv = final_predictions.map(function(ft) {
   return ee.Feature(null, { 
     'Month': ft.get('Month'),
     'True_BGR': ft.get('BGR'),
@@ -290,7 +277,7 @@ var export_csv = sampled_data_merged.map(function(ft) {
 
 Export.table.toDrive({
   collection: export_csv,
-  description: 'SRER_Metrics_True_vs_Predicted_Unified',
+  description: 'SRER_Metrics_True_vs_Predicted_Unified_Fixed',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
@@ -339,5 +326,3 @@ Map.addLayer(pred_im_sep, {min:15, max:75, palette:['#1a9850', '#91cf60', '#d9ef
 
 // Boundary Layer
 Map.addLayer(bounds_fc, {}, 'SR_bounds', false);
-
-
