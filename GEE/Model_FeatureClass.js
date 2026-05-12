@@ -86,7 +86,7 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
   });
 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 BANDS, INDICES & TOPOGRAPHY
+// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES
 // =========================================================================
 
 function extractS2Data(startDate, endDate, monthLabel) {
@@ -123,17 +123,13 @@ function extractS2Data(startDate, endDate, monthLabel) {
   // Calculate Normalized Burn Ratio 2 (NBR2)
   var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  // Calculate Slope from USGS 3DEP 10m DEM
-  var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
-  var slope = ee.Terrain.slope(dem).rename('Slope');
-
-  // Add all indices and slope back to the image
-  sent2_im = sent2_im.addBands([ndvi, mcari, bsi, nbr2, slope]);
+  // Add all indices back to the image (Slope removed)
+  sent2_im = sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
   
   // Define exactly what to extract so it gets attached to the grid features
   var bandsToExtract = sent2_im.select([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
-    'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'
+    'NDVI', 'MCARI', 'BSI', 'NBR2'
   ]);
 
   var gridWithMonth = v_sent2_joined_grids.map(function(feat) {
@@ -148,10 +144,10 @@ function extractS2Data(startDate, endDate, monthLabel) {
     tileScale: 4
   });
 
-  // Filter out any cells that fall outside the satellite/DEM coverage
+  // Filter out any cells that fall outside the satellite coverage
   return extracted.filter(ee.Filter.notNull([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
-    'NDVI', 'MCARI', 'BSI', 'NBR2', 'Slope'
+    'NDVI', 'MCARI', 'BSI', 'NBR2'
   ]));
 }
 
@@ -237,8 +233,6 @@ function processMonthMetrics(grid_subset, classified_img) {
     
     var v_nearestMeanValues = Get_Mean_Fetch(obstacles, binary, v_rnd);
 
-    // Because ft already contains B11, BSI, Slope, etc. from extractS2Data, 
-    // we just append the 3 new structural metrics and return it.
     return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
   });
 }
