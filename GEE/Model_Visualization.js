@@ -24,7 +24,7 @@ var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
-// SENTINEL-2 EXTRACTION (OPTION A: MEDIAN COMPOSITE)
+// SENTINEL-2 EXTRACTION (STRICT CLOUD MASKING)
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(bounds_geom).first().select('B2').projection();
@@ -33,12 +33,14 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(bounds_geom)                     
     .filterDate(startDate, endDate)
+    // STRICT MASKING: Permanently delete clouds >20% probability
     .map(function(img) {
       var cloudMask = img.select('MSK_CLDPRB').lt(20);
       return img.updateMask(cloudMask);
     });                
 
   var sent2_im = sent2_ic
+    // Use median() to blend ONLY the surviving clear pixels
     .median() 
     .clip(bounds_geom)
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
