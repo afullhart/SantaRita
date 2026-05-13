@@ -20,6 +20,13 @@ var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ec
 // Safely returns an ee.Geometry bounding box
 var v_extent = bounds_geom.bounds();
 
+// =========================================================================
+// TOPOGRAPHIC PRE-PROCESSING
+// =========================================================================
+// Calculate terrain properties in radians once for the whole script
+var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
+var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
 // =========================================================================
 // DYNAMIC DATES (PULLED FROM CLOUD ASSET)
@@ -35,7 +42,6 @@ var may_end   = ee.Date(may_start).advance(7, 'day'); // 7-day exclusive filter 
 var sep_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 9)).first());
 var sep_start = ee.String(sep_window.get('Start_Date'));
 var sep_end   = ee.Date(sep_start).advance(7, 'day');
-
 
 // =========================================================================
 // PART 1: STATIC GRID GENERATION
@@ -91,7 +97,7 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
   });
 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES (TRIPLE DEFENSE MASKING)
+// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES 
 // =========================================================================
 
 function extractS2Data(startDate, endDate, monthLabel) {
@@ -99,22 +105,46 @@ function extractS2Data(startDate, endDate, monthLabel) {
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate);                
 
-  // THE FIX: Triple Defense Masking
+  // Triple Defense Masking + Topographic Cosine Correction
   var sent2_im = sent2_ic
     .map(function(img) {
-      // Defense 1: Cloud Probability < 20%
+      // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
-      
-      // Defense 2: SCL Explicit Rejection
       var scl = img.select('SCL');
       var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
-      
-      // Defense 3: Hard Physical Brightness Limit
       var blueMask = img.select('B2').lt(2500);
-      
-      // Combine all three
       var masterMask = probMask.and(sclMask).and(blueMask);
-      return img.updateMask(masterMask);
+      var maskedImg = img.updateMask(masterMask);
+
+      // --- Topographic Illumination Correction (Cosine) ---
+      // Convert sun angles into constant Images to prevent Number vs Image math crashes
+      var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
+      var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
+      
+      var cosZ = ee.Image.constant(sz_num.cos());
+      var sinZ = ee.Image.constant(sz_num.sin());
+      var sa_img = ee.Image.constant(sa_num);
+      
+      var cosS = terrain_slope.cos();
+      var sinS = terrain_slope.sin();
+      var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
+      
+      // Calculate Illumination Condition (IL) securely with Image math
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
+      
+      // Clamp to avoid extreme overcorrection in deep shadows (prevent dividing by ~0)
+      var illu_clamped = illumination.max(0.1); 
+      
+      var correctionFactor = cosZ.divide(illu_clamped);
+      
+      // Apply correction only to optical reflectance bands
+      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
+      
+      // THE FIX: Explicitly cast to float so median() can seamlessly stack them!
+      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
+      
+      // Overwrite raw bands with corrected bands
+      return maskedImg.addBands(correctedBands, null, true);
     })
     .median()
     .clip(v_extent)
@@ -280,3 +310,5 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'FC_asset'
 });
+
+
