@@ -19,7 +19,7 @@ var bounds_geom = bounds_fc.first().geometry();
 var v_extent = bounds_geom.bounds();
 
 // =========================================================================
-// SENTINEL-2 PREDICTOR EXTRACTION (OPTION A: MEDIAN COMPOSITE)
+// SENTINEL-2 PREDICTOR EXTRACTION (STRICT CLOUD MASKING)
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(v_extent)
@@ -30,14 +30,14 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate)
-    // OPTION A: Mask clouds > 20% probability
+    // STRICT MASKING: Permanently delete clouds >20% probability before compositing
     .map(function(img) {
       var cloudMask = img.select('MSK_CLDPRB').lt(20);
       return img.updateMask(cloudMask);
     });                
 
   var sent2_im = sent2_ic
-    // OPTION A: Median reducer to blend clear pixels
+    // Use median() to blend ONLY the surviving clear pixels
     .median() 
     .clip(v_extent)
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
