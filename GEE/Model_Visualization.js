@@ -6,9 +6,15 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
+// =========================================================================
+// TOPOGRAPHIC PRE-PROCESSING & HILLSHADE VISUALS
+// =========================================================================
 var dem = ee.Image('USGS/3DEP/10m').clip(bounds_geom);
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 var hillshade_norm = hillshade.divide(255.0);
+
+var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
+var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
 // =========================================================================
 // BACKGROUND MODEL TRAINING
@@ -24,7 +30,7 @@ var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
-// SENTINEL-2 EXTRACTION (TRIPLE DEFENSE MASKING)
+// SENTINEL-2 EXTRACTION (TRIPLE DEFENSE + TOPOGRAPHIC CORRECTION)
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(bounds_geom).first().select('B2').projection();
@@ -33,25 +39,42 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(bounds_geom)                     
     .filterDate(startDate, endDate)
-    // STRICT MASKING: Triple Defense
     .map(function(img) {
-      // Defense 1: Cloud Probability < 20%
+      // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
-      
-      // Defense 2: SCL Explicit Rejection
       var scl = img.select('SCL');
       var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
-      
-      // Defense 3: Hard Physical Brightness Limit
       var blueMask = img.select('B2').lt(2500);
-      
-      // Combine all three
       var masterMask = probMask.and(sclMask).and(blueMask);
-      return img.updateMask(masterMask);
+      var maskedImg = img.updateMask(masterMask);
+
+      // --- THE FIXES: Topographic Illumination Correction (Cosine) ---
+      // Fix 1: Wrap solar angles in constant Images
+      var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
+      var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
+      
+      var cosZ = ee.Image.constant(sz_num.cos());
+      var sinZ = ee.Image.constant(sz_num.sin());
+      var sa_img = ee.Image.constant(sa_num);
+      
+      var cosS = terrain_slope.cos();
+      var sinS = terrain_slope.sin();
+      var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
+      
+      // Calculate Illumination Condition
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
+      var illu_clamped = illumination.max(0.1); 
+      var correctionFactor = cosZ.divide(illu_clamped);
+      
+      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
+      
+      // Fix 2: Explicitly cast to float
+      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
+      
+      return maskedImg.addBands(correctedBands, null, true);
     });                
 
   var sent2_im = sent2_ic
-    // Use median() to blend ONLY the surviving clear pixels
     .median() 
     .clip(bounds_geom)
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
@@ -86,27 +109,24 @@ function drapeHillshade(image, minVal, maxVal) {
 // REGIONAL TIME-SERIES CHART (PRINT TO CONSOLE)
 // =========================================================================
 
-// Map over all 96 optimal cloud windows to generate the regional predictions
+// Map over all optimal cloud windows to generate the regional predictions
 var regionalTimeSeriesData = cloud_windows.map(function(window) {
   var sDate = ee.String(window.get('Start_Date'));
   var eDate = ee.Date(sDate).advance(7, 'day');
   
-  // Generate predictors and classify on the fly
   var s2_img = buildS2Composite(sDate, eDate);
   var p_bgr = s2_img.classify(model_bgr).rename('BGR');
   var p_lpi = s2_img.classify(model_lpi).rename('LPI');
   var p_mft = s2_img.classify(model_mft).rename('MFT');
   var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
 
-  // Sample the entire region (Calculate spatial mean)
   var regional_mean = combined_preds.reduceRegion({
     reducer: ee.Reducer.mean(),
     geometry: bounds_geom,
-    scale: 60, // Using 60m scale to speed up the massive computation
+    scale: 60, 
     maxPixels: 1e9
   });
 
-  // Return the predictions alongside the exact timestamp
   return ee.Feature(null, {
     'system:time_start': window.get('system:time_start'),
     'BGR_pct': regional_mean.get('BGR'),
@@ -115,12 +135,10 @@ var regionalTimeSeriesData = cloud_windows.map(function(window) {
   });
 });
 
-// Filter out null values and FORCE chronological sorting
 regionalTimeSeriesData = regionalTimeSeriesData
   .filter(ee.Filter.notNull(['BGR_pct', 'LPI_pct', 'Fetch_m']))
   .sort('system:time_start');
 
-// Generate the Dual-Y Axis Chart for the Console
 var regionalChart = ui.Chart.feature.byFeature({
   features: regionalTimeSeriesData,
   xProperty: 'system:time_start',
@@ -142,7 +160,6 @@ var regionalChart = ui.Chart.feature.byFeature({
   interpolateNulls: true
 });
 
-// Print it directly to the console
 print(regionalChart);
 
 // =========================================================================
@@ -153,18 +170,14 @@ var mainPanel = ui.Panel({style: {width: '400px', padding: '15px', backgroundCol
 var title = ui.Label('SRER Predictive Model', {fontWeight: 'bold', fontSize: '20px', margin: '0 0 15px 0', backgroundColor: '#f8f9fa'});
 var desc = ui.Label('Select a date to render predictive maps. Click anywhere on the map to generate a time-series chart for that location.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
 
-// Sliders
 var yearLabel = ui.Label('Select Year (2018 - 2025):', {fontWeight: 'bold', backgroundColor: '#f8f9fa'});
 var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {width: '90%'}});
 var monthLabel = ui.Label('Select Month (1 - 12):', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var monthSlider = ui.Slider({min: 1, max: 12, value: 5, step: 1, style: {width: '90%'}});
 var statusLabel = ui.Label('Ready to render.', {color: 'blue', fontWeight: 'bold', margin: '20px 0', backgroundColor: '#f8f9fa'});
 var renderBtn = ui.Button({label: 'Generate Predictive Maps', onClick: updateMap, style: {stretch: 'horizontal', margin: '20px 0 0 0'}});
-
-// Inspector Chart Panel (Empty by default)
 var chartPanel = ui.Panel({style: {margin: '20px 0 0 0', backgroundColor: '#f8f9fa'}});
 
-// Build the main UI
 mainPanel.add(title);
 mainPanel.add(desc);
 mainPanel.add(yearLabel);
@@ -180,9 +193,6 @@ Map.centerObject(bounds_geom, 12);
 Map.setOptions('ROADMAP'); 
 Map.style().set('cursor', 'crosshair'); 
 
-// =========================================================================
-// RENDER FUNCTION (SLIDERS)
-// =========================================================================
 function updateMap() {
   var y = yearSlider.getValue();
   var m = monthSlider.getValue();
@@ -202,7 +212,6 @@ function updateMap() {
   var lpi_draped = drapeHillshade(p_lpi, 0, 60);
   var mft_draped = drapeHillshade(p_mft, 0, 0.5);
 
-  // Preserve the clicked point marker if it exists
   var markerLayer = null;
   Map.layers().forEach(function(layer) {
     if (layer.getName() === 'Selected Point') { markerLayer = layer; }
@@ -230,15 +239,10 @@ function updateMap() {
   });
 }
 
-// =========================================================================
-// TIME-SERIES CHART FUNCTION (ON CLICK)
-// =========================================================================
 Map.onClick(function(coords) {
-  // Add a red dot to the map where the user clicked
   var point = ee.Geometry.Point(coords.lon, coords.lat);
   var dot = ui.Map.Layer(point, {color: 'FF0000'}, 'Selected Point');
   
-  // Remove the old point layer if it exists, then add the new one
   var layers = Map.layers();
   for (var i = 0; i < layers.length(); i++) {
     if (layers.get(i).getName() === 'Selected Point') {
@@ -248,26 +252,22 @@ Map.onClick(function(coords) {
   }
   Map.layers().add(dot);
 
-  // Map over all 96 optimal cloud windows to generate the predictions for the chart
   var timeSeriesData = cloud_windows.map(function(window) {
     var sDate = ee.String(window.get('Start_Date'));
     var eDate = ee.Date(sDate).advance(7, 'day');
     
-    // Generate predictors and classify on the fly
     var s2_img = buildS2Composite(sDate, eDate);
     var p_bgr = s2_img.classify(model_bgr).rename('BGR');
     var p_lpi = s2_img.classify(model_lpi).rename('LPI');
     var p_mft = s2_img.classify(model_mft).rename('MFT');
     var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
 
-    // Sample the exact point
     var sampled = combined_preds.reduceRegion({
       reducer: ee.Reducer.first(),
       geometry: point,
       scale: 10
     });
 
-    // Return the predictions alongside the exact timestamp
     return ee.Feature(null, {
       'system:time_start': window.get('system:time_start'),
       'BGR_pct': sampled.get('BGR'),
@@ -276,12 +276,10 @@ Map.onClick(function(coords) {
     });
   });
 
-  // Filter out null values and FORCE chronological sorting
   timeSeriesData = timeSeriesData
     .filter(ee.Filter.notNull(['BGR_pct', 'LPI_pct', 'Fetch_m']))
     .sort('system:time_start');
   
-  // Generate the Dual-Y Axis Chart
   var chart = ui.Chart.feature.byFeature({
     features: timeSeriesData,
     xProperty: 'system:time_start',
@@ -308,5 +306,4 @@ Map.onClick(function(coords) {
   chartPanel.add(chart);
 });
 
-// Trigger the first default map load
 updateMap();
