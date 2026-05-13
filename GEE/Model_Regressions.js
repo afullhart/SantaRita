@@ -19,7 +19,14 @@ var bounds_geom = bounds_fc.first().geometry();
 var v_extent = bounds_geom.bounds();
 
 // =========================================================================
-// SENTINEL-2 PREDICTOR EXTRACTION (TRIPLE DEFENSE MASKING)
+// TOPOGRAPHIC PRE-PROCESSING
+// =========================================================================
+var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
+var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
+
+// =========================================================================
+// SENTINEL-2 PREDICTOR EXTRACTION 
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(v_extent)
@@ -30,25 +37,48 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate)
-    // STRICT MASKING: Triple Defense
+    // STRICT MASKING + TOPOGRAPHIC CORRECTION
     .map(function(img) {
-      // Defense 1: Cloud Probability < 20%
+      // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
-      
-      // Defense 2: SCL Explicit Rejection
       var scl = img.select('SCL');
       var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
-      
-      // Defense 3: Hard Physical Brightness Limit
       var blueMask = img.select('B2').lt(2500);
-      
-      // Combine all three
       var masterMask = probMask.and(sclMask).and(blueMask);
-      return img.updateMask(masterMask);
+      var maskedImg = img.updateMask(masterMask);
+
+      // --- THE FIX: Topographic Illumination Correction (Cosine) ---
+      // Convert sun angles into constant Images to prevent Number vs Image math crashes
+      var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
+      var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
+      
+      var cosZ = ee.Image.constant(sz_num.cos());
+      var sinZ = ee.Image.constant(sz_num.sin());
+      var sa_img = ee.Image.constant(sa_num);
+      
+      var cosS = terrain_slope.cos();
+      var sinS = terrain_slope.sin();
+      var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
+      
+      // Calculate Illumination Condition (IL) securely with Image math
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
+      
+      // Clamp to avoid extreme overcorrection in deep shadows (prevent dividing by ~0)
+      var illu_clamped = illumination.max(0.1); 
+      
+      var correctionFactor = cosZ.divide(illu_clamped);
+      
+      // Apply correction only to optical reflectance bands
+      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
+      
+      // Explicitly cast to float so median() can seamlessly stack them!
+      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
+      
+      // Overwrite raw bands with corrected bands
+      return maskedImg.addBands(correctedBands, null, true);
     });                
 
   var sent2_im = sent2_ic
-    // Use median() to blend ONLY the surviving clear pixels
     .median() 
     .clip(v_extent)
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
@@ -144,7 +174,6 @@ var model_lpi = ee.Classifier.smileGradientTreeBoost(regularized_params)
 var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
-
 // -------------------------------------------------------------------------
 // CALCULATE & PRINT FINAL MODEL (STRATIFIED TRAINING ERROR)
 // -------------------------------------------------------------------------
@@ -170,7 +199,6 @@ print('Fitted BGR RMSE -> May:', getStratifiedTrainingRMSE(model_bgr, fc, 'BGR',
 print('Fitted LPI RMSE -> May:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'Sept'));
 print('Fitted MFT RMSE -> May:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'Sept'));
 print('-------------------------------------------------------');
-
 
 // =========================================================================
 // SEASON-AWARE EXPORT (MATCHES CONSOLE EXACTLY)
