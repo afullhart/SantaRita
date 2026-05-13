@@ -1,16 +1,4 @@
 // =========================================================================
-// USER INPUTS & DATES
-// =========================================================================
-
-// Dry Season (Pre-Monsoon) Dates
-var may_start = '2019-05-26';
-var may_end   = '2019-05-31';
-
-// Post-Monsoon Dates
-var sep_start = '2019-09-10';
-var sep_end   = '2019-09-20';
-
-// =========================================================================
 // SETUP & ASSETS
 // =========================================================================
 
@@ -31,6 +19,23 @@ var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ec
 
 // Safely returns an ee.Geometry bounding box
 var v_extent = bounds_geom.bounds();
+
+
+// =========================================================================
+// DYNAMIC DATES (PULLED FROM CLOUD ASSET)
+// =========================================================================
+var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
+
+// Query the asset for May 2019
+var may_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 5)).first());
+var may_start = ee.String(may_window.get('Start_Date'));
+var may_end   = ee.Date(may_start).advance(7, 'day'); // 7-day exclusive filter limit
+
+// Query the asset for Sept 2019
+var sep_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 9)).first());
+var sep_start = ee.String(sep_window.get('Start_Date'));
+var sep_end   = ee.Date(sep_start).advance(7, 'day');
+
 
 // =========================================================================
 // PART 1: STATIC GRID GENERATION
@@ -86,7 +91,7 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
   });
 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES
+// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES (TRIPLE DEFENSE MASKING)
 // =========================================================================
 
 function extractS2Data(startDate, endDate, monthLabel) {
@@ -94,9 +99,24 @@ function extractS2Data(startDate, endDate, monthLabel) {
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate);                
 
-  // Added B11 and B12 here
+  // THE FIX: Triple Defense Masking
   var sent2_im = sent2_ic
-    .mosaic()
+    .map(function(img) {
+      // Defense 1: Cloud Probability < 20%
+      var probMask = img.select('MSK_CLDPRB').lt(20);
+      
+      // Defense 2: SCL Explicit Rejection
+      var scl = img.select('SCL');
+      var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
+      
+      // Defense 3: Hard Physical Brightness Limit
+      var blueMask = img.select('B2').lt(2500);
+      
+      // Combine all three
+      var masterMask = probMask.and(sclMask).and(blueMask);
+      return img.updateMask(masterMask);
+    })
+    .median()
     .clip(v_extent)
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
     .multiply(0.0001) 
@@ -151,7 +171,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
   ]));
 }
 
-// Pass the variables from the top of the script into the extraction function
+// Pass the variables from the dynamic query into the extraction function
 var may_s2_data = extractS2Data(may_start, may_end, 'May');
 var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept');
 
@@ -260,5 +280,3 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'FC_asset'
 });
-
-
