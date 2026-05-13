@@ -24,7 +24,7 @@ var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
-// SENTINEL-2 EXTRACTION (STRICT CLOUD MASKING)
+// SENTINEL-2 EXTRACTION (TRIPLE DEFENSE MASKING)
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(bounds_geom).first().select('B2').projection();
@@ -33,10 +33,21 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(bounds_geom)                     
     .filterDate(startDate, endDate)
-    // STRICT MASKING: Permanently delete clouds >20% probability
+    // STRICT MASKING: Triple Defense
     .map(function(img) {
-      var cloudMask = img.select('MSK_CLDPRB').lt(20);
-      return img.updateMask(cloudMask);
+      // Defense 1: Cloud Probability < 20%
+      var probMask = img.select('MSK_CLDPRB').lt(20);
+      
+      // Defense 2: SCL Explicit Rejection
+      var scl = img.select('SCL');
+      var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
+      
+      // Defense 3: Hard Physical Brightness Limit
+      var blueMask = img.select('B2').lt(2500);
+      
+      // Combine all three
+      var masterMask = probMask.and(sclMask).and(blueMask);
+      return img.updateMask(masterMask);
     });                
 
   var sent2_im = sent2_ic
