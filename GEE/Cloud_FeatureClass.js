@@ -52,26 +52,46 @@ var allBestWindowsList = years.map(function(y) {
       // Filter the Sentinel-2 record to this exact 7-day period
       var s2_window = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
         .filterBounds(bounds_geom)
-        .filterDate(startDate, endDateFilter);
+        .filterDate(startDate, endDateFilter)
+        // ---> THE FIX: Calculate True Obscuration instead of relying solely on MSK_CLDPRB <---
+        .map(function(img) {
+          // Defense 1: Standard Cloud Probability > 20%
+          var cldProb = img.select('MSK_CLDPRB').gte(20);
+          
+          // Defense 2: SCL Explicit Rejection (3=Shadow, 8=Med, 9=High, 10=Cirrus, 11=Snow/Ice)
+          var scl = img.select('SCL');
+          var badScl = scl.eq(3).or(scl.eq(8)).or(scl.eq(9)).or(scl.eq(10)).or(scl.eq(11));
+          
+          // Defense 3: Hard Physical Brightness Limit
+          var blownOut = img.select('B2').gte(2500);
+          
+          // Combine. If ANY are true, this pixel is marked 1 (Obscured)
+          var isObscured = cldProb.or(badScl).or(blownOut).rename('OBSCURED');
+          return img.addBands(isObscured);
+        });
         
       var imgCount = s2_window.size();
         
-      // Calculate the mean cloud probability
-      var meanCldImg = s2_window.select('MSK_CLDPRB').mean();
+      // Calculate the mean obscuration fraction for the whole window (0.0 to 1.0)
+      var meanObscuredImg = s2_window.select('OBSCURED').mean();
       
-      var meanCld = ee.Algorithms.If(
+      var meanObscuredRaw = ee.Algorithms.If(
         imgCount.eq(0),
-        100, // Penalize windows with absolutely no imagery
-        meanCldImg.reduceRegion({
+        1.0, // Penalize windows with absolutely no imagery (100% obscured)
+        meanObscuredImg.reduceRegion({
           reducer: ee.Reducer.mean(),
           geometry: bounds_geom,
           scale: 60,
           maxPixels: 1e9
-        }).get('MSK_CLDPRB')
+        }).get('OBSCURED')
       );
       
-      // Failsafe in case reduceRegion returns null
-      meanCld = ee.Algorithms.If(ee.Algorithms.IsEqual(meanCld, null), 100, meanCld);
+      // Failsafe in case reduceRegion returns null, then convert fraction to percentage
+      var meanCld = ee.Algorithms.If(
+        ee.Algorithms.IsEqual(meanObscuredRaw, null), 
+        100, 
+        ee.Number(meanObscuredRaw).multiply(100)
+      );
       
       // Format a clean label for charting/export
       var windowLabel = ee.String(y.format('%d')).cat('-')
@@ -82,14 +102,13 @@ var allBestWindowsList = years.map(function(y) {
       // We must calculate a timestamp to sort the final collection chronologically
       var timeStart = startDate.millis();
       
-      // ---> THE FIX IS HERE: Replacing 'null' with 'bounds_geom' <---
       return ee.Feature(bounds_geom, {
         'Year': y,
         'Month': m,
         'Start_Date': startDate.format('YYYY-MM-dd'),
         'End_Date': endDateInclusive.format('YYYY-MM-dd'),
         'Window_Label': windowLabel,
-        'Mean_Cloud_Prob': meanCld,
+        'Mean_Cloud_Prob': meanCld, // Now correctly represents "True Obscuration %"
         'Image_Count': imgCount,
         'system:time_start': timeStart 
       });
@@ -160,5 +179,3 @@ Export.table.toAsset({
   description: 'Export_Cloud_FeatureClass_Asset',
   assetId: 'projects/ee-andrewfullhart/assets/Cloud_FeatureClass'
 });
-
-
