@@ -70,6 +70,69 @@ function drapeHillshade(image, minVal, maxVal) {
 }
 
 // =========================================================================
+// REGIONAL TIME-SERIES CHART (PRINT TO CONSOLE)
+// =========================================================================
+
+// Map over all 96 optimal cloud windows to generate the regional predictions
+var regionalTimeSeriesData = cloud_windows.map(function(window) {
+  var sDate = ee.String(window.get('Start_Date'));
+  var eDate = ee.Date(sDate).advance(7, 'day');
+  
+  // Generate predictors and classify on the fly
+  var s2_img = buildS2Composite(sDate, eDate);
+  var p_bgr = s2_img.classify(model_bgr).rename('BGR');
+  var p_lpi = s2_img.classify(model_lpi).rename('LPI');
+  var p_mft = s2_img.classify(model_mft).rename('MFT');
+  var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
+
+  // Sample the entire region (Calculate spatial mean)
+  var regional_mean = combined_preds.reduceRegion({
+    reducer: ee.Reducer.mean(),
+    geometry: bounds_geom,
+    scale: 60, // Using 60m scale to speed up the massive computation
+    maxPixels: 1e9
+  });
+
+  // Return the predictions alongside the exact timestamp
+  return ee.Feature(null, {
+    'system:time_start': window.get('system:time_start'),
+    'BGR_pct': regional_mean.get('BGR'),
+    'LPI_pct': regional_mean.get('LPI'),
+    'Fetch_m': regional_mean.get('MFT')
+  });
+});
+
+// Filter out null values and FORCE chronological sorting
+regionalTimeSeriesData = regionalTimeSeriesData
+  .filter(ee.Filter.notNull(['BGR_pct', 'LPI_pct', 'Fetch_m']))
+  .sort('system:time_start');
+
+// Generate the Dual-Y Axis Chart for the Console
+var regionalChart = ui.Chart.feature.byFeature({
+  features: regionalTimeSeriesData,
+  xProperty: 'system:time_start',
+  yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m']
+})
+.setChartType('LineChart')
+.setOptions({
+  title: 'SRER Regional Average: Predicted Metrics Over Time',
+  hAxis: {title: 'Date', format: 'MMM yyyy'},
+  series: {
+    0: {targetAxisIndex: 0, color: '#d73027', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean BGR (%)'},
+    1: {targetAxisIndex: 0, color: '#fc8d59', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean LPI (%)'},
+    2: {targetAxisIndex: 1, color: '#1a9850', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean Fetch (m)'}
+  },
+  vAxes: {
+    0: {title: 'Percentage (%)'},
+    1: {title: 'Mean Fetch Distance (m)'}
+  },
+  interpolateNulls: true
+});
+
+// Print it directly to the console
+print(regionalChart);
+
+// =========================================================================
 // UI WIDGETS & INTERACTIVITY
 // =========================================================================
 var mainPanel = ui.Panel({style: {width: '400px', padding: '15px', backgroundColor: '#f8f9fa'}});
@@ -228,7 +291,6 @@ Map.onClick(function(coords) {
     backgroundColor: '#f8f9fa'
   });
 
-  // THE FIX: Add the chart directly to the panel (it has a built-in loading animation)
   chartPanel.clear();
   chartPanel.add(chart);
 });
