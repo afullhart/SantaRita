@@ -195,14 +195,22 @@ function updateMap() {
       .filterBounds(bounds_geom)
       .filterDate(startDate, endDateFilter);
       
-    // THE FIX: Strict Masking. Permanently delete clouds >20% probability, THEN use median()
+    // THE FIX: Triple Defense Masking
     var s2_mosaic = s2_collection
       .map(function(img) {
-        // Create a binary mask where 1 is clear and 0 is cloudy
-        var cloudMask = img.select('MSK_CLDPRB').lt(20);
+        // Defense 1: Cloud Probability < 20%
+        var probMask = img.select('MSK_CLDPRB').lt(20);
         
-        // .updateMask() completely deletes pixels where the mask is 0
-        return img.updateMask(cloudMask); 
+        // Defense 2: SCL Explicit Rejection
+        var scl = img.select('SCL');
+        var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
+        
+        // Defense 3: Hard Physical Brightness Limit
+        var blueMask = img.select('B2').lt(2500);
+        
+        // Combine all three
+        var masterMask = probMask.and(sclMask).and(blueMask);
+        return img.updateMask(masterMask);
       })
       .median()
       .clip(v_extent)
