@@ -61,6 +61,7 @@ function getBestWindowForMonthYear(y, m) {
     
     return ee.Feature(null, {
       'Start_Date': startDate.format('YYYY-MM-dd'),
+      'system:time_start': startDate.millis(), 
       'Window_Label': windowLabel,
       'Mean_Cloud_Prob': meanCld,
       'Image_Count': imgCount
@@ -70,6 +71,47 @@ function getBestWindowForMonthYear(y, m) {
   var windowsFc = ee.FeatureCollection(windows);
   return windowsFc.sort('Mean_Cloud_Prob').first();
 }
+
+// =========================================================================
+// CONSOLE CHART: TIME-SERIES OF ALL OPTIMAL WINDOWS
+// =========================================================================
+
+// Define the overall historical period
+var start_year = 2018; 
+var end_year = 2025;   
+var yearsList = ee.List.sequence(start_year, end_year);
+var monthsList = ee.List.sequence(1, 12);
+
+// Map over all years and months to generate the full time-series of optimal windows
+var allOptimalWindows = ee.FeatureCollection(
+  yearsList.map(function(y) {
+    return monthsList.map(function(m) {
+      return getBestWindowForMonthYear(y, m);
+    });
+  }).flatten()
+);
+
+// Ensure the collection is sorted chronologically
+allOptimalWindows = allOptimalWindows.sort('system:time_start');
+
+// Generate the Line Chart
+var cloudChart = ui.Chart.feature.byFeature({
+  features: allOptimalWindows,
+  xProperty: 'system:time_start',
+  yProperties: ['Mean_Cloud_Prob']
+})
+.setChartType('LineChart')
+.setOptions({
+  title: 'Optimal Window Cloud Probability (2018 - 2025)',
+  hAxis: {title: 'Date', format: 'MMM yyyy'},
+  vAxis: {title: 'Mean Cloud Probability (%)', viewWindow: {min: 0, max: 100}},
+  colors: ['#1f77b4'],
+  lineWidth: 2,
+  pointSize: 3
+});
+
+// Print directly to the console
+print('Time-Series: Optimal Window Cloud Probabilities', cloudChart);
 
 
 // =========================================================================
@@ -112,8 +154,6 @@ panel.add(statusBox);
 
 // Center map on the study area
 Map.centerObject(bounds_geom, 13);
-
-// ---> CORRECTED DEFAULT MAP HERE <---
 Map.setOptions('ROADMAP'); 
 
 // The main function that runs when sliders change
@@ -155,9 +195,16 @@ function updateMap() {
       .filterBounds(bounds_geom)
       .filterDate(startDate, endDateFilter);
       
-    // Mosaic, clip, and SCALE to match your 0.0-0.3 visualization parameters
+    // THE FIX: Strict Masking. Permanently delete clouds >20% probability, THEN use median()
     var s2_mosaic = s2_collection
-      .mosaic()
+      .map(function(img) {
+        // Create a binary mask where 1 is clear and 0 is cloudy
+        var cloudMask = img.select('MSK_CLDPRB').lt(20);
+        
+        // .updateMask() completely deletes pixels where the mask is 0
+        return img.updateMask(cloudMask); 
+      })
+      .median()
       .clip(v_extent)
       .multiply(0.0001); 
       
