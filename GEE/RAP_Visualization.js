@@ -6,6 +6,8 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
+print(fc.first());
+
 // Global memory variables for the Pixel Inspector
 var current_rap_img = null;
 var current_srer_img = null;
@@ -20,15 +22,23 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 // BACKGROUND MODEL TRAINING (ONLY BGR REQUIRED)
 // =========================================================================
-var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
-var regularized_params = {numberOfTrees: 300, shrinkage: 0.01, samplingRate: 0.7, maxNodes: 12, seed: 123};
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(regularized_params)
+// --- UPDATED: "Goldilocks" Hyperparameters ---
+var goldilocks_params = {
+  numberOfTrees: 300, 
+  shrinkage: 0.05, 
+  samplingRate: 0.5, 
+  maxNodes: 24, 
+  seed: 123
+};
+
+var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION')
   .train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
 
 // =========================================================================
-// SENTINEL-2 EXTRACTION (TRIPLE DEFENSE + TOPOGRAPHIC CORRECTION)
+// SENTINEL-2 EXTRACTION (WITH TOPOGRAPHIC PREDICTORS)
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(bounds_geom).first().select('B2').projection();
@@ -49,6 +59,7 @@ function buildS2Composite(startDate, endDate) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
+      // --- Calculate Illumination Condition (NO DIVISION) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
       
@@ -60,33 +71,34 @@ function buildS2Composite(startDate, endDate) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
       
-      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
-      var illu_clamped = illumination.max(0.1); 
-      var correctionFactor = cosZ.divide(illu_clamped);
+      // Calculate illumination and append it directly as a band
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
-      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
-      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
-      
-      return maskedImg.addBands(correctedBands, null, true);
+      return maskedImg.addBands(illumination);
     });                
 
-  var sent2_im = sent2_ic
-    .median() 
-    .clip(bounds_geom)
-    .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
+  var sent2_median = sent2_ic.median().clip(bounds_geom);
+  
+  var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-  var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
-  var mcari = sent2_im.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
-    'B3': sent2_im.select('B3'), 'B4': sent2_im.select('B4'), 'B5': sent2_im.select('B5')  
+  var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var mcari = optical_bands.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
+    'B3': optical_bands.select('B3'), 'B4': optical_bands.select('B4'), 'B5': optical_bands.select('B5')  
   }).rename('MCARI');
-  var bsi = sent2_im.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
-    'B2': sent2_im.select('B2'), 'B4': sent2_im.select('B4'), 'B8': sent2_im.select('B8'), 'B11': sent2_im.select('B11')
+  var bsi = optical_bands.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
+    'B2': optical_bands.select('B2'), 'B4': optical_bands.select('B4'), 'B8': optical_bands.select('B8'), 'B11': optical_bands.select('B11')
   }).rename('BSI');
-  var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
+  var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  return sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
+  // --- Stack optical bands, indices, and all 3 topographic predictors ---
+  return optical_bands.addBands([
+    ndvi, mcari, bsi, nbr2, 
+    sent2_median.select('illumination'), 
+    terrain_slope.rename('slope'), 
+    terrain_aspect.rename('aspect')
+  ]);
 }
 
 // --- Dynamic HSV Draping Function ---
@@ -109,7 +121,7 @@ function drapeHillshade(image, minVal, maxVal, customPalette) {
 // =========================================================================
 print('Generating regional averages for the console... (This may take ~30 seconds)');
 
-var years = ee.List.sequence(2018, 2024);
+var years = ee.List.sequence(2018, 2025);
 
 var regionalTimeSeriesData = ee.FeatureCollection(years.map(function(y) {
   var year = ee.Number(y);
@@ -123,7 +135,7 @@ var regionalTimeSeriesData = ee.FeatureCollection(years.map(function(y) {
   var rap_mean = rap_annual_yr.reduceRegion({
     reducer: ee.Reducer.mean(),
     geometry: bounds_geom,
-    scale: 60, // Scaled down slightly to prevent memory limits
+    scale: 60, 
     maxPixels: 1e9
   }).get('BGR');
 
@@ -158,12 +170,12 @@ var regionalChart = ui.Chart.feature.byFeature({
 })
 .setChartType('LineChart')
 .setOptions({
-  title: 'SRER Regional Average: Bare Ground % (2018-2024)',
+  title: 'SRER Regional Average: Bare Ground % (2018-2025)',
   hAxis: {title: 'Year'},
   vAxis: {title: 'Mean Bare Ground (%)'},
   series: {
-    0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, // Green
-    1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} // Red
+    0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, 
+    1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} 
   },
   interpolateNulls: true
 });
@@ -179,7 +191,7 @@ var title = ui.Label('SRER Model vs. RAP (10m)', {fontWeight: 'bold', fontSize: 
 var desc = ui.Label('Aggregates 12 monthly predictions from the SRER model and compares the annual mean against the 10m Rangeland Analysis Platform (RAP). Click anywhere on the map to inspect raw pixel values and generate a time-series chart.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
 
 var yearLabel = ui.Label('Select Year:', {fontWeight: 'bold', backgroundColor: '#f8f9fa'});
-var yearSlider = ui.Slider({min: 2018, max: 2024, value: 2019, step: 1, style: {width: '90%'}}); 
+var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {width: '90%'}}); 
 var statusLabel = ui.Label('Ready to process.', {color: 'blue', fontWeight: 'bold', margin: '20px 0', backgroundColor: '#f8f9fa'});
 var renderBtn = ui.Button({label: 'Compare RAP vs. Model', onClick: updateMap, style: {stretch: 'horizontal', margin: '10px 0'}});
 
@@ -239,9 +251,9 @@ function updateMap() {
   current_rap_img = rap_annual;
   current_srer_img = srer_annual;
 
-  // Apply HSV Terrain Draping
-  var rap_draped = drapeHillshade(rap_annual, 10, 80, bgrPalette);
-  var srer_draped = drapeHillshade(srer_annual, 10, 80, bgrPalette);
+  // Apply HSV Terrain Draping with 0-80 scaling
+  var rap_draped = drapeHillshade(rap_annual, 0, 80, bgrPalette);
+  var srer_draped = drapeHillshade(srer_annual, 0, 80, bgrPalette);
   var diff_draped = drapeHillshade(difference, -20, 20, diffPalette);
 
   // Preserve the clicked point marker if it exists
@@ -302,7 +314,7 @@ Map.onClick(function(coords) {
   diffLabel.setValue('Difference: --');
   
   chartPanel.clear();
-  chartPanel.add(ui.Label('Generating 2018-2024 time-series chart...\n(This may take a few seconds)', {color: '#777', fontSize: '12px', whiteSpace: 'pre-wrap', backgroundColor: '#f8f9fa'}));
+  chartPanel.add(ui.Label('Generating 2018-2025 time-series chart...\n(This may take a few seconds)', {color: '#777', fontSize: '12px', whiteSpace: 'pre-wrap', backgroundColor: '#f8f9fa'}));
 
   // 1. EVALUATE SINGLE YEAR FOR THE INSPECTOR PANEL
   var combined = ee.Image.cat([
@@ -334,7 +346,7 @@ Map.onClick(function(coords) {
   });
 
   // 2. GENERATE TIME-SERIES CHART ACROSS ALL YEARS
-  var years = ee.List.sequence(2018, 2024);
+  var years = ee.List.sequence(2018, 2025);
   
   var timeSeriesData = ee.FeatureCollection(years.map(function(y) {
     var year = ee.Number(y);
@@ -378,12 +390,12 @@ Map.onClick(function(coords) {
   })
   .setChartType('LineChart')
   .setOptions({
-    title: 'Point Trend: Bare Ground % (2018-2024)',
+    title: 'Point Trend: Bare Ground % (2018-2025)',
     hAxis: {title: 'Year'},
     vAxis: {title: 'Bare Ground (%)'},
     series: {
-      0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, // Green
-      1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} // Red
+      0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, 
+      1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} 
     },
     interpolateNulls: true,
     backgroundColor: '#ffffff'
