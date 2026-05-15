@@ -37,7 +37,10 @@ function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate)
-    // STRICT MASKING + TOPOGRAPHIC CORRECTION
+    .map(function(img) {
+      return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
+    })
+    .filter(ee.Filter.eq('has_aux_bands', true))
     .map(function(img) {
       // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
@@ -47,8 +50,7 @@ function buildS2Composite(startDate, endDate) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
-      // --- THE FIX: Topographic Illumination Correction (Cosine) ---
-      // Convert sun angles into constant Images to prevent Number vs Image math crashes
+      // --- Calculate Illumination Condition (NO DIVISION) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
       
@@ -60,47 +62,42 @@ function buildS2Composite(startDate, endDate) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
       
-      // Calculate Illumination Condition (IL) securely with Image math
-      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
+      // Calculate the illumination condition and add it as a new band
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
-      // Clamp to avoid extreme overcorrection in deep shadows (prevent dividing by ~0)
-      var illu_clamped = illumination.max(0.1); 
-      
-      var correctionFactor = cosZ.divide(illu_clamped);
-      
-      // Apply correction only to optical reflectance bands
-      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
-      
-      // Explicitly cast to float so median() can seamlessly stack them!
-      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
-      
-      // Overwrite raw bands with corrected bands
-      return maskedImg.addBands(correctedBands, null, true);
+      return maskedImg.addBands(illumination);
     });                
 
-  var sent2_im = sent2_ic
+  var sent2_median = sent2_ic
     .median() 
-    .clip(v_extent)
+    .clip(v_extent);
+    
+  var optical_bands = sent2_median
     .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-  var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
-  var mcari = sent2_im.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
-    'B3': sent2_im.select('B3'), 'B4': sent2_im.select('B4'), 'B5': sent2_im.select('B5')  
+  var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var mcari = optical_bands.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
+    'B3': optical_bands.select('B3'), 'B4': optical_bands.select('B4'), 'B5': optical_bands.select('B5')  
   }).rename('MCARI');
-  var bsi = sent2_im.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
-    'B2': sent2_im.select('B2'), 'B4': sent2_im.select('B4'), 'B8': sent2_im.select('B8'), 'B11': sent2_im.select('B11')
+  var bsi = optical_bands.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
+    'B2': optical_bands.select('B2'), 'B4': optical_bands.select('B4'), 'B8': optical_bands.select('B8'), 'B11': optical_bands.select('B11')
   }).rename('BSI');
-  var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
+  var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  return sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
+  return optical_bands.addBands([
+    ndvi, mcari, bsi, nbr2, 
+    sent2_median.select('illumination'), 
+    terrain_slope.rename('slope'), 
+    terrain_aspect.rename('aspect')
+  ]);
 }
 
 var sent2_may = buildS2Composite(may_start, may_end);
 var sent2_sep = buildS2Composite(sep_start, sep_end);
 
-var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
 // =========================================================================
 // K-FOLDS CROSS VALIDATION (K=5) - UNIFIED MODEL
@@ -113,6 +110,15 @@ var fc_folds = fc.randomColumn('random', 123).map(function(ft) {
   return ft.set('fold', ee.Number(ft.get('random')).multiply(k_folds).floor());
 });
 
+// THE FIX: "Goldilocks" Hyperparameters to balance extremes vs. overfitting
+var goldilocks_params = {
+  numberOfTrees: 300, 
+  shrinkage: 0.05,       // Lower learning rate
+  samplingRate: 0.5,     // More randomness (fights overfitting)
+  maxNodes: 24,          // Shallower trees (prevents memorization)
+  seed: null
+};
+
 function runCV(targetProp) {
   var fold_metrics = fold_list.map(function(fold) {
     var i = ee.Number(fold);
@@ -122,7 +128,11 @@ function runCV(targetProp) {
     var test_fc = fc_folds.filter(ee.Filter.eq('fold', i));
     
     var gtb = ee.Classifier.smileGradientTreeBoost({
-      numberOfTrees: 300, shrinkage: 0.01, samplingRate: 0.7, maxNodes: 12, seed: current_seed
+      numberOfTrees: goldilocks_params.numberOfTrees, 
+      shrinkage: goldilocks_params.shrinkage, 
+      samplingRate: goldilocks_params.samplingRate, 
+      maxNodes: goldilocks_params.maxNodes, 
+      seed: current_seed
     }).setOutputMode('REGRESSION').train({features: train_fc, classProperty: targetProp, inputProperties: inputProps});
     
     var tested = test_fc.classify({classifier: gtb, outputName: 'predicted'});
@@ -165,13 +175,15 @@ print('-------------------------------------------------------');
 // =========================================================================
 // FINAL MODEL TRAINING
 // =========================================================================
-var regularized_params = {numberOfTrees: 300, shrinkage: 0.01, samplingRate: 0.7, maxNodes: 12, seed: 123};
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(regularized_params)
+// Train the final export models using the Goldilocks parameters
+goldilocks_params.seed = 123; // Set seed for reproducibility on final export
+
+var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
-var model_lpi = ee.Classifier.smileGradientTreeBoost(regularized_params)
+var model_lpi = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
-var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
+var model_mft = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // -------------------------------------------------------------------------
@@ -223,6 +235,47 @@ var export_csv = final_predictions.map(function(ft) {
   });
 });
 
+// =========================================================================
+// SCATTER PLOTS & R-SQUARED VISUALIZATION
+// =========================================================================
+print('Generating Predicted vs. True scatter plots (n=4999 subset)...');
+
+function makeScatterChart(dataset, trueProp, predProp, title, colorCode) {
+  var sampledDataset = dataset.randomColumn('chart_sort').sort('chart_sort').limit(4999);
+
+  var chart = ui.Chart.feature.byFeature({
+    features: sampledDataset,
+    xProperty: trueProp,
+    yProperties: [predProp]
+  })
+  .setChartType('ScatterChart')
+  .setOptions({
+    title: title + ': Predicted vs. True (Sampled)',
+    hAxis: {title: 'True ' + title},
+    vAxis: {title: 'Predicted ' + title},
+    pointSize: 2,
+    colors: [colorCode],
+    trendlines: { 
+      0: { 
+        type: 'linear', 
+        color: 'black', 
+        lineWidth: 2, 
+        opacity: 0.8, 
+        showR2: true, 
+        visibleInLegend: true 
+      } 
+    }
+  });
+  print(chart);
+}
+
+makeScatterChart(export_csv, 'True_BGR', 'Predicted_BGR', 'Bare Ground (BGR %)', '#d73027'); // Red
+makeScatterChart(export_csv, 'True_LPI', 'Predicted_LPI', 'Large Patch Index (LPI %)', '#fc8d59'); // Orange
+makeScatterChart(export_csv, 'True_MFT', 'Predicted_MFT', 'Mean Fetch (MFT m)', '#1a9850'); // Green
+
+// =========================================================================
+// EXPORT TO DRIVE
+// =========================================================================
 Export.table.toDrive({
   collection: export_csv,
   description: 'SRER_Metrics_True_vs_Predicted_Unified_Fixed',
