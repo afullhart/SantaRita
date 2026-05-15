@@ -21,7 +21,7 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-// --- UPDATED: "Goldilocks" Hyperparameters ---
+// --- Hyperparameters ---
 var goldilocks_params = {
   numberOfTrees: 300, 
   shrinkage: 0.05, 
@@ -217,7 +217,8 @@ function updateMap() {
   var p_lpi = s2_img.classify(model_lpi).rename('Pred_LPI');
   var p_mft = s2_img.classify(model_mft).rename('Pred_MFT');
 
-  var bgr_draped = drapeHillshade(p_bgr, 0, 80);
+  // UPDATED: BGR min/max set to 0, 75
+  var bgr_draped = drapeHillshade(p_bgr, 0, 75);
   var lpi_draped = drapeHillshade(p_lpi, 0, 80);
   var mft_draped = drapeHillshade(p_mft, 0, 0.5);
 
