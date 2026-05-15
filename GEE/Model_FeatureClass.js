@@ -97,16 +97,18 @@ var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spati
   });
 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 BANDS & INDICES 
+// PART 2: EXTRACT SENTINEL-2 & TOPOGRAPHIC PREDICTORS
 // =========================================================================
 
 function extractS2Data(startDate, endDate, monthLabel) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(v_extent)                     
-    .filterDate(startDate, endDate);                
-
-  // Triple Defense Masking + Topographic Cosine Correction
-  var sent2_im = sent2_ic
+    .filterDate(startDate, endDate)
+    // --- Detect and delete malformed 2018 images BEFORE processing ---
+    .map(function(img) {
+      return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
+    })
+    .filter(ee.Filter.eq('has_aux_bands', true))
     .map(function(img) {
       // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
@@ -116,8 +118,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
-      // --- Topographic Illumination Correction (Cosine) ---
-      // Convert sun angles into constant Images to prevent Number vs Image math crashes
+      // --- Calculate Illumination (NO DIVISION APPLIED) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
       
@@ -129,57 +130,49 @@ function extractS2Data(startDate, endDate, monthLabel) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
       
-      // Calculate Illumination Condition (IL) securely with Image math
-      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
+      // Calculate the illumination condition and add it as a new band
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
-      // Clamp to avoid extreme overcorrection in deep shadows (prevent dividing by ~0)
-      var illu_clamped = illumination.max(0.1); 
-      
-      var correctionFactor = cosZ.divide(illu_clamped);
-      
-      // Apply correction only to optical reflectance bands
-      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
-      
-      // THE FIX: Explicitly cast to float so median() can seamlessly stack them!
-      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
-      
-      // Overwrite raw bands with corrected bands
-      return maskedImg.addBands(correctedBands, null, true);
-    })
-    .median()
-    .clip(v_extent)
-    .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
+      return maskedImg.addBands(illumination);
+    });                
+
+  // Reduce the collection to a median composite
+  var sent2_median = sent2_ic.median().clip(v_extent);
+
+  // Extract optical bands and apply scale factor
+  var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-  var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
-
-  var mcari = sent2_im.expression(
+  // Calculate Indices
+  var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var mcari = optical_bands.expression(
       '((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
-        'B3': sent2_im.select('B3'), 
-        'B4': sent2_im.select('B4'), 
-        'B5': sent2_im.select('B5')  
+        'B3': optical_bands.select('B3'), 
+        'B4': optical_bands.select('B4'), 
+        'B5': optical_bands.select('B5')  
   }).rename('MCARI');
-
-  // Calculate Bare Soil Index (BSI)
-  var bsi = sent2_im.expression(
+  var bsi = optical_bands.expression(
       '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
-        'B2':  sent2_im.select('B2'),
-        'B4':  sent2_im.select('B4'),
-        'B8':  sent2_im.select('B8'),
-        'B11': sent2_im.select('B11')
+        'B2':  optical_bands.select('B2'),
+        'B4':  optical_bands.select('B4'),
+        'B8':  optical_bands.select('B8'),
+        'B11': optical_bands.select('B11')
   }).rename('BSI');
+  var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  // Calculate Normalized Burn Ratio 2 (NBR2)
-  var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
-
-  // Add all indices back to the image (Slope removed)
-  sent2_im = sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
+  // Combine optical bands, indices, illumination, slope, and ASPECT
+  var final_img = optical_bands.addBands([
+    ndvi, mcari, bsi, nbr2, 
+    sent2_median.select('illumination'), 
+    terrain_slope.rename('slope'), 
+    terrain_aspect.rename('aspect')
+  ]);
   
   // Define exactly what to extract so it gets attached to the grid features
-  var bandsToExtract = sent2_im.select([
+  var bandsToExtract = final_img.select([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
-    'NDVI', 'MCARI', 'BSI', 'NBR2'
+    'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
   ]);
 
   var gridWithMonth = v_sent2_joined_grids.map(function(feat) {
@@ -197,7 +190,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
   // Filter out any cells that fall outside the satellite coverage
   return extracted.filter(ee.Filter.notNull([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
-    'NDVI', 'MCARI', 'BSI', 'NBR2'
+    'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
   ]));
 }
 
@@ -300,7 +293,7 @@ var final_combined = final_may.merge(final_sep);
 
 Export.table.toDrive({
   collection: final_combined,
-  description: 'CSV_table',
+  description: 'SRER_Training_FeatureClass',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
@@ -310,5 +303,4 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'FC_asset'
 });
-
 
