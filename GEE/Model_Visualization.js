@@ -19,18 +19,26 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 // BACKGROUND MODEL TRAINING
 // =========================================================================
-var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2'];
-var regularized_params = {numberOfTrees: 300, shrinkage: 0.01, samplingRate: 0.7, maxNodes: 12, seed: 123};
+var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(regularized_params)
+// --- UPDATED: "Goldilocks" Hyperparameters ---
+var goldilocks_params = {
+  numberOfTrees: 300, 
+  shrinkage: 0.05, 
+  samplingRate: 0.5, 
+  maxNodes: 24, 
+  seed: 123
+};
+
+var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
-var model_lpi = ee.Classifier.smileGradientTreeBoost(regularized_params)
+var model_lpi = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
-var model_mft = ee.Classifier.smileGradientTreeBoost(regularized_params)
+var model_mft = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
-// SENTINEL-2 EXTRACTION (TRIPLE DEFENSE + TOPOGRAPHIC CORRECTION)
+// SENTINEL-2 EXTRACTION
 // =========================================================================
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(bounds_geom).first().select('B2').projection();
@@ -40,6 +48,10 @@ function buildS2Composite(startDate, endDate) {
     .filterBounds(bounds_geom)                     
     .filterDate(startDate, endDate)
     .map(function(img) {
+      return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
+    })
+    .filter(ee.Filter.eq('has_aux_bands', true))
+    .map(function(img) {
       // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
       var scl = img.select('SCL');
@@ -48,8 +60,7 @@ function buildS2Composite(startDate, endDate) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
-      // --- THE FIXES: Topographic Illumination Correction (Cosine) ---
-      // Fix 1: Wrap solar angles in constant Images
+      // --- Calculate Illumination Condition (NO DIVISION) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
       
@@ -61,36 +72,34 @@ function buildS2Composite(startDate, endDate) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
       
-      // Calculate Illumination Condition
-      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp));
-      var illu_clamped = illumination.max(0.1); 
-      var correctionFactor = cosZ.divide(illu_clamped);
+      // Calculate illumination and append it directly as a band
+      var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
-      var bandsToCorrect = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'];
-      
-      // Fix 2: Explicitly cast to float
-      var correctedBands = maskedImg.select(bandsToCorrect).multiply(correctionFactor).toFloat();
-      
-      return maskedImg.addBands(correctedBands, null, true);
+      return maskedImg.addBands(illumination);
     });                
 
-  var sent2_im = sent2_ic
-    .median() 
-    .clip(bounds_geom)
-    .select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
+  var sent2_median = sent2_ic.median().clip(bounds_geom);
+  
+  var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-  var ndvi = sent2_im.normalizedDifference(['B8', 'B4']).rename('NDVI');
-  var mcari = sent2_im.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
-    'B3': sent2_im.select('B3'), 'B4': sent2_im.select('B4'), 'B5': sent2_im.select('B5')  
+  var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
+  var mcari = optical_bands.expression('((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
+    'B3': optical_bands.select('B3'), 'B4': optical_bands.select('B4'), 'B5': optical_bands.select('B5')  
   }).rename('MCARI');
-  var bsi = sent2_im.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
-    'B2': sent2_im.select('B2'), 'B4': sent2_im.select('B4'), 'B8': sent2_im.select('B8'), 'B11': sent2_im.select('B11')
+  var bsi = optical_bands.expression('((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
+    'B2': optical_bands.select('B2'), 'B4': optical_bands.select('B4'), 'B8': optical_bands.select('B8'), 'B11': optical_bands.select('B11')
   }).rename('BSI');
-  var nbr2 = sent2_im.normalizedDifference(['B11', 'B12']).rename('NBR2');
+  var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  return sent2_im.addBands([ndvi, mcari, bsi, nbr2]);
+  // --- Stack optical bands, indices, and all 3 topographic predictors ---
+  return optical_bands.addBands([
+    ndvi, mcari, bsi, nbr2, 
+    sent2_median.select('illumination'),
+    terrain_slope.rename('slope'),
+    terrain_aspect.rename('aspect')
+  ]);
 }
 
 function drapeHillshade(image, minVal, maxVal) {
@@ -209,7 +218,7 @@ function updateMap() {
   var p_mft = s2_img.classify(model_mft).rename('Pred_MFT');
 
   var bgr_draped = drapeHillshade(p_bgr, 0, 80);
-  var lpi_draped = drapeHillshade(p_lpi, 0, 60);
+  var lpi_draped = drapeHillshade(p_lpi, 0, 80);
   var mft_draped = drapeHillshade(p_mft, 0, 0.5);
 
   var markerLayer = null;
