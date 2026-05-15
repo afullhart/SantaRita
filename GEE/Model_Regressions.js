@@ -110,7 +110,7 @@ var fc_folds = fc.randomColumn('random', 123).map(function(ft) {
   return ft.set('fold', ee.Number(ft.get('random')).multiply(k_folds).floor());
 });
 
-// THE FIX: "Goldilocks" Hyperparameters to balance extremes vs. overfitting
+// Hyperparameters
 var goldilocks_params = {
   numberOfTrees: 300, 
   shrinkage: 0.05,       // Lower learning rate
