@@ -24,7 +24,7 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-// --- UPDATED: "Goldilocks" Hyperparameters ---
+// --- Hyperparameters ---
 var goldilocks_params = {
   numberOfTrees: 300, 
   shrinkage: 0.05, 
