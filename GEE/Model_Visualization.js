@@ -9,7 +9,10 @@ var bounds_geom = bounds_fc.first().geometry().bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING & HILLSHADE VISUALS
 // =========================================================================
-var dem = ee.Image('USGS/3DEP/10m').clip(bounds_geom);
+// Load your newly exported, pre-calculated 10m resampled DEM asset instead of the catalog
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled'); 
+
+// Compute hillshade and terrain parameters instantly without on-the-fly aggregation math
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 var hillshade_norm = hillshade.divide(255.0);
 
@@ -23,10 +26,10 @@ var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', '
 
 // --- Hyperparameters ---
 var goldilocks_params = {
-  numberOfTrees: 300, 
-  shrinkage: 0.05, 
-  samplingRate: 0.5, 
-  maxNodes: 24, 
+  numberOfTrees: 300,
+  shrinkage: 0.05,
+  samplingRate: 0.5,
+  maxNodes: 24,
   seed: 123
 };
 
@@ -45,7 +48,7 @@ var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 
 function buildS2Composite(startDate, endDate) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-    .filterBounds(bounds_geom)                     
+    .filterBounds(bounds_geom)                    
     .filterDate(startDate, endDate)
     .map(function(img) {
       return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
@@ -63,25 +66,24 @@ function buildS2Composite(startDate, endDate) {
       // --- Calculate Illumination Condition (NO DIVISION) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
-      
+            
       var cosZ = ee.Image.constant(sz_num.cos());
       var sinZ = ee.Image.constant(sz_num.sin());
       var sa_img = ee.Image.constant(sa_num);
-      
+            
       var cosS = terrain_slope.cos();
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
-      
+            
       // Calculate illumination and append it directly as a band
       var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
-      
+            
       return maskedImg.addBands(illumination);
     });                
 
   var sent2_median = sent2_ic.median().clip(bounds_geom);
-  
-  var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12']) 
-    .multiply(0.0001) 
+  var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
+    .multiply(0.0001)
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
   var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
@@ -122,7 +124,6 @@ function drapeHillshade(image, minVal, maxVal) {
 var regionalTimeSeriesData = cloud_windows.map(function(window) {
   var sDate = ee.String(window.get('Start_Date'));
   var eDate = ee.Date(sDate).advance(7, 'day');
-  
   var s2_img = buildS2Composite(sDate, eDate);
   var p_bgr = s2_img.classify(model_bgr).rename('BGR');
   var p_lpi = s2_img.classify(model_lpi).rename('LPI');
@@ -133,7 +134,7 @@ var regionalTimeSeriesData = cloud_windows.map(function(window) {
     reducer: ee.Reducer.mean(),
     geometry: bounds_geom,
     scale: 60, 
-    maxPixels: 1e9
+    maxPixels: 1e13 
   });
 
   return ee.Feature(null, {
@@ -187,20 +188,21 @@ var statusLabel = ui.Label('Ready to render.', {color: 'blue', fontWeight: 'bold
 var renderBtn = ui.Button({label: 'Generate Predictive Maps', onClick: updateMap, style: {stretch: 'horizontal', margin: '20px 0 0 0'}});
 var chartPanel = ui.Panel({style: {margin: '20px 0 0 0', backgroundColor: '#f8f9fa'}});
 
-mainPanel.add(title);
-mainPanel.add(desc);
+mainPanel.add(title); 
+mainPanel.add(desc); 
 mainPanel.add(yearLabel);
-mainPanel.add(yearSlider);
+mainPanel.add(yearSlider); 
 mainPanel.add(monthLabel);
-mainPanel.add(monthSlider);
+mainPanel.add(monthSlider); 
 mainPanel.add(renderBtn);
-mainPanel.add(statusLabel);
-mainPanel.add(chartPanel);
+mainPanel.add(statusLabel); 
+mainPanel.add(chartPanel); 
 
 ui.root.insert(0, mainPanel);
-Map.centerObject(bounds_geom, 12);
+
+Map.centerObject(bounds_geom, 12); 
 Map.setOptions('ROADMAP'); 
-Map.style().set('cursor', 'crosshair'); 
+Map.style().set('cursor', 'crosshair');
 
 function updateMap() {
   var y = yearSlider.getValue();
@@ -210,14 +212,13 @@ function updateMap() {
   var window_query = cloud_windows.filter(ee.Filter.eq('Year', y)).filter(ee.Filter.eq('Month', m));
   var optimal_window = ee.Feature(window_query.first());
   var sDate = ee.String(optimal_window.get('Start_Date'));
-  var eDate = ee.Date(sDate).advance(7, 'day');
-
+  var eDate = ee.Date(sDate).advance(7, 'day'); 
   var s2_img = buildS2Composite(sDate, eDate);
+
   var p_bgr = s2_img.classify(model_bgr).rename('Pred_BGR');
   var p_lpi = s2_img.classify(model_lpi).rename('Pred_LPI');
   var p_mft = s2_img.classify(model_mft).rename('Pred_MFT');
 
-  // UPDATED: BGR min/max set to 0, 75
   var bgr_draped = drapeHillshade(p_bgr, 0, 75);
   var lpi_draped = drapeHillshade(p_lpi, 0, 80);
   var mft_draped = drapeHillshade(p_mft, 0, 0.5);
@@ -226,8 +227,8 @@ function updateMap() {
   Map.layers().forEach(function(layer) {
     if (layer.getName() === 'Selected Point') { markerLayer = layer; }
   });
-
   Map.layers().reset();
+
   Map.addLayer(hillshade, {min: 0, max: 255}, 'Terrain Hillshade', false);
   Map.addLayer(s2_img, {bands: ['B4', 'B3', 'B2'], min: 0.0, max: 0.3, gamma: 1.4}, 'Sentinel-2 RGB (' + y + '-' + m + ')', false);
   Map.addLayer(mft_draped, {}, 'Predicted MFT (' + y + '-' + m + ')', false);
@@ -239,7 +240,7 @@ function updateMap() {
   Map.addLayer(outline, {palette: '#000000'}, 'SRER Boundary');
 
   if (markerLayer) { Map.layers().add(markerLayer); }
-
+  
   optimal_window.get('Window_Label').evaluate(function(label) {
     if (label) {
       statusLabel.setValue('Displaying Window: \n' + label);
@@ -252,7 +253,6 @@ function updateMap() {
 Map.onClick(function(coords) {
   var point = ee.Geometry.Point(coords.lon, coords.lat);
   var dot = ui.Map.Layer(point, {color: 'FF0000'}, 'Selected Point');
-  
   var layers = Map.layers();
   for (var i = 0; i < layers.length(); i++) {
     if (layers.get(i).getName() === 'Selected Point') {
@@ -265,13 +265,12 @@ Map.onClick(function(coords) {
   var timeSeriesData = cloud_windows.map(function(window) {
     var sDate = ee.String(window.get('Start_Date'));
     var eDate = ee.Date(sDate).advance(7, 'day');
-    
     var s2_img = buildS2Composite(sDate, eDate);
     var p_bgr = s2_img.classify(model_bgr).rename('BGR');
     var p_lpi = s2_img.classify(model_lpi).rename('LPI');
     var p_mft = s2_img.classify(model_mft).rename('MFT');
     var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
-
+    
     var sampled = combined_preds.reduceRegion({
       reducer: ee.Reducer.first(),
       geometry: point,
