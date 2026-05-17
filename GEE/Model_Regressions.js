@@ -21,7 +21,9 @@ var v_extent = bounds_geom.bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING
 // =========================================================================
-var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+// Load your pre-calculated 10m resampled DEM asset instead of the raw catalog image
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled');
+
 var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
