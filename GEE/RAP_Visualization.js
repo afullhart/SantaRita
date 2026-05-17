@@ -4,6 +4,8 @@
 var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
+
+// Clean extraction of geometry bounds to prevent compiler token errors
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
 print(fc.first());
@@ -15,7 +17,9 @@ var current_srer_img = null;
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING
 // =========================================================================
-var dem = ee.Image('USGS/3DEP/10m').clip(bounds_geom);
+// Load your pre-calculated 10m resampled DEM asset instead of the catalog
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled');
+
 var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
