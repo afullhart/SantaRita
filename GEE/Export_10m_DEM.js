@@ -5,45 +5,44 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
 // =========================================================================
-// PURE DEM RESAMPLING (NO SMOOTHING)
+// DEM PURE RESAMPLING (NO SMOOTHING)
 // =========================================================================
-var proj10m = ee.Image('USGS/3DEP/10m').projection();
+// Load the high-resolution 1m DEM ImageCollection and filter to the boundary
 var dem_1m_col = ee.ImageCollection('USGS/3DEP/1m').filterBounds(bounds_geom);
+
+// Extract the native 1m projection system
 var proj1m = dem_1m_col.first().projection();
+
+// Mosaic the collection and explicitly enforce the native 1m projection
 var dem_1m = dem_1m_col.mosaic().setDefaultProjection(proj1m);
 
+// Aggregate 1m to 10m using a true spatial mean reduction
+// CRITICAL: We skip manual re-projections here to block grid aliasing errors.
 var dem_10m_resampled = dem_1m
   .reduceResolution({
     reducer: ee.Reducer.mean(),
     maxPixels: 1024
   })
-  .reproject({
-    crs: proj10m
-  })
   .clip(bounds_geom);
 
 // =========================================================================
-// ON-THE-FLY HILLSHADE VISUALIZATION
+// LIVE MAP VISUALIZATION (QUALITY CHECK)
 // =========================================================================
-var hillshade = ee.Terrain.hillshade(dem_10m_resampled, 270, 45);
+var hillshade_check = ee.Terrain.hillshade(dem_10m_resampled, 270, 45);
+
 Map.centerObject(bounds_geom, 12);
-Map.addLayer(dem_10m_resampled, {min: 1000, max: 2000, palette: ['#1a9850', '#ffffbf', '#d73027']}, 'Raw Resampled 10m DEM (Elevation)');
-Map.addLayer(hillshade, {min: 0, max: 255}, 'Raw Resampled 10m DEM (Hillshade)');
+Map.addLayer(hillshade_check, {min: 0, max: 255}, 'Stripe-Free Asset Hillshade Preview');
 
 // =========================================================================
-// EXPORT TO LOSS-FREE SINGLE-BAND ASSET
+// BULLETPROOF EXPORT WITH EXPLICIT CRS DEFINITION
 // =========================================================================
-// THE FIX: Force .toFloat() to preserve exact decimal scales
-var final_export_image = dem_10m_resampled.rename('elevation').toFloat();
-
 Export.image.toAsset({
-  image: final_export_image,
-  description: 'SR_10m_DEM_Raw_Resampled',
+  image: dem_10m_resampled.rename('elevation'),
+  description: 'SR_10m_DEM_Pristine',
   assetId: 'projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled',
   region: bounds_geom,
   scale: 10,
-  crs: proj10m.crs().getInfo(),
-  maxPixels: 1e13,
-  // THE FIX: Override standard lossy scaling with full data value precision
-  pyramidingPolicy: { 'elevation': 'mean' } 
+  // THE CRITICAL FIX: Direct string definitions ensure pristine backend translation
+  crs: 'EPSG:4269', 
+  pyramidingPolicy: { 'elevation': 'mean' }
 });
