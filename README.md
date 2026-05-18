@@ -26,9 +26,10 @@ graph TD
         P2["Cloud-Free Feature Class"]
     end
 
-    %% --- THE NEW JOINT J1 ---
-    %% This node is outside of all subgraphs to be in the shared space.
+    %% --- JOINTS ---
+    %% These nodes are outside of subgraphs to be in the shared space.
     J1(( )):::junction
+    J2(( )):::junction
 
     %% --- LEVEL 3: FEATURE ENGINEERING & TRAINING (Moved Left) ---
     subgraph CoreModel [Model Feature Engineering & Training]
@@ -54,23 +55,26 @@ graph TD
     S1 --> P1
     S2 --> P2
 
-    %% --- INPUTS TO THE NEW JOINT ---
+    %% --- INPUTS TO THE FIRST JOINT ---
     I4 --> J1
     P1 --> J1
     P2 --> J1
     I5 --> J1
 
-    %% JOINT TO FEATURE CLASS SCRIPT
+    %% JOINT 1 TO FEATURE CLASS SCRIPT
     J1 --> S3
 
     %% Feature generation to training data
     S3 --> T1
 
-    %% Training data feeding downstream scripts
-    T1 --> O1
-    T1 --> O2
-    T1 --> O3
-    T1 --> O4
+    %% --- TRAINING DATA TO SECOND JOINT ---
+    T1 --> J2
+
+    %% --- JOINT 2 TO DOWNSTREAM SCRIPTS ---
+    J2 --> O1
+    J2 --> O2
+    J2 --> O3
+    J2 --> O4
 
     %% Assigning Classes for Visual Distinction
     class I1,I2,I3,I4,I5 input;
