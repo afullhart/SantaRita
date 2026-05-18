@@ -1,8 +1,10 @@
-
 ```mermaid
 ---
 config:
   layout: elk
+  theme: default
+  look: handDrawn
+  edges: straight
 ---
 flowchart TD
     classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
@@ -37,9 +39,9 @@ flowchart TD
     %% --- CONNECTIONS & FLOW ---
 
     %% Pre-Processing Flows
-    D --> H
-    E --> H
-    F --> I
+    D --> D1--> H
+    E --> E1--> H
+    F --> F1--> I
 
     %% Central Extraction Manifold (5 Data Paths Merging Into Feature Class)
     A --> J
@@ -57,12 +59,12 @@ flowchart TD
     L --> N
     L --> O
 
-    %% Global Asset Bypasses (Routing intermediate assets around training directly to UI scripts)
-    H -.->|Terrain Bypass| M
-    H -.->|Terrain Bypass| O
-    I -.->|Temporal Bypass| M
-    I -.->|Temporal Bypass| O
-    G -->|Boundary Boundary| O
+    %% Global Asset Bypasses
+    H -.-> M
+    H -.-> O
+    I -.-> M
+    I -.-> O
+    G --> O
 ```
 
 ### Scripts
