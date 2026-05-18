@@ -1,5 +1,6 @@
+
 ```mermaid
-graph TD
+graph LR
     classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
     classDef script fill:#e1f5fe,stroke:#3182bd,stroke-width:2px;
 
