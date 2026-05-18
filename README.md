@@ -27,11 +27,12 @@ graph TD
   end
 
   %% --- JOINTS ---
+  J3(( )):::junction
   J1(( )):::junction
   J2(( )):::junction
 
   %% --- LEVEL 3: FEATURE ENGINEERING & TRAINING ---
-  subgraph CoreModel ["Model Feature<br>Engineering & Training"]
+  subgraph CoreModel [Model Feature Engineering & Training]
     S3["Model_FeatureClass.js"]
     T1["Training Feature Class"]
   end
@@ -45,10 +46,11 @@ graph TD
   end
 
   %% --- FLOW CONNECTIONS ---
-  %% Left-side footprint pipeline
-  I1 --> S3
-  I2 --> S3
-  I3 --> S3
+  %% Left-side footprint pipeline gathered to a joint to narrow the subgraph
+  I1 --> J3
+  I2 --> J3
+  I3 --> J3
+  J3 --> S3
 
   %% Pre-processing script connections
   S1 --> P1
