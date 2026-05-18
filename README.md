@@ -87,3 +87,12 @@ graph TD
 * **`Model_Visualization.js`**: Loads the tuned Gradient Tree Boost models, resampled DEM, and optimal cloud windows to dynamically generate interactive, topography-aware predictive maps and local time-series charts.
 * **`RAP_Comparison.js`**: Isolates drone-based ground truth data and compares it against the 10m Rangeland Analysis Platform (RAP) by computing Cumulative Distribution Functions (CDFs) to visualize fractional cover distributions.
 * **`RAP_Visualization.js`**: Maps the spatial difference (residuals) between the custom SRER predictive model and the 10m RAP product, aggregating monthly predictions into an annual mean and providing an interactive pixel inspector for historical trends.
+
+### Data sources
+* **`5cm Classified Images`**: https://gee-community-catalog.org/projects/srer_drone/
+* **`Drone Image Footprints`**:
+* **`Ecological Survey Footprints`**:
+* **`10m Sentinel-2 Images`**:
+* **`Export_10m_DEM.js`**:
+* **`Export_Cloud_FeatureClass.js`**:
+* **`SRER Footprint`**:
