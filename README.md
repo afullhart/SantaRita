@@ -1,70 +1,74 @@
 ```mermaid
----
-config:
-  layout: elk
-  theme: default
-  look: handDrawn
-  edges: straight
----
-flowchart TD
-    classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
-    classDef script fill:#e1f5fe,stroke:#3182bd,stroke-width:2px;
-    classDef asset fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+graph TD
+    %% Styling Definitions
+    classDef input fill:#e1f5fe,stroke:#039be5,stroke-width:2px,stroke-dasharray: 3 3;
+    classDef intermediate fill:#fff3e0,stroke:#ffb74d,stroke-width:2px;
+    classDef script fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
+    classDef output fill:#ede7f6,stroke:#7e57c2,stroke-width:2px;
 
-    %% Data Sources (Top Row Inputs)
-    A[5cm classified images]:::input
-    B[Drone image Footprints]:::input
-    C[Ecological Survey Footprints]:::input
-    D[10m Sentinel-2 images]:::input
-    E[Export_10m_DEM.js]:::script
-    F[Export_Cloud_FeatureClass.js]:::script
-    G[SRER Footprint]:::input
+    %% --- LEVEL 1: INPUT DATA & RAW TEXTURES ---
+    subgraph Inputs [Data Sources & Footprints]
+        I1["5cm Classified Images"]
+        I2["Drone Image Footprints"]
+        I3["Ecological Survey Footprints"]
+        I4["10m Sentinel-2 Images"]
+        I5["SRER Footprint"]
+        
+        %% Script-based pre-processing inputs
+        S1["Export_10m_DEM.js"]
+        S2["Export_Cloud_FeatureClass.js"]
+    end
 
-    %% Intermediate Assets (The First Manifold Stage)
-    H[10m USGS Resampled DEM]:::asset
-    I[Cloud-Free Feature Class]:::asset
+    %% --- LEVEL 2: PRE-PROCESSING & INTERMEDIATE PRODUCTS ---
+    subgraph PreProcessing [Pre-Processing & Derived Features]
+        P1["10m USGS Resampled DEM"]
+        P2["Cloud-Free Feature Class"]
+    end
 
-    %% Feature Extraction Core
-    J[Model_FeatureClass.js]:::script
-    K[Training Feature Class]:::asset
+    %% --- LEVEL 3: FEATURE ENGINEERING & TRAINING ---
+    subgraph CoreModel [Model Feature Engineering & Training]
+        S3["Model_FeatureClass.js"]
+        T1["Training Feature Class"]
+    end
 
-    %% Analysis & Execution
-    L[Model_Regressions.js]:::script
+    %% --- LEVEL 4: ANALYSIS & VISUALIZATION SCRIPTS ---
+    subgraph Evaluation [Analysis, Regression & Visualization]
+        O1["Model_Regressions.js"]
+        O2["Model_Visualization.js"]
+        O3["RAP_Comparison.js"]
+        O4["RAP_Visualization.js"]
+    end
 
-    %% Downstream Visualization & Comparison (Bottom Row Outputs)
-    M[Model_Visualization.js]:::script
-    N[RAP_Comparison.js]:::script
-    O[RAP_Visualization.js]:::script
+    %% --- FLOW CONNECTIONS ---
+    %% Left-side footprint pipeline
+    I1 --> S3
+    I2 --> S3
+    I3 --> S3
 
-    %% --- CONNECTIONS & FLOW ---
+    %% Pre-processing script connections
+    S1 --> P1
+    S2 --> P2
 
-    %% Pre-Processing Flows
-    D --> D1--> H
-    E --> E1--> H
-    F --> F1--> I
+    %% Right-side environmental data pipeline feeding into Feature Class script
+    I4 --> S3
+    P1 --> S3
+    P2 --> S3
+    I5 --> S3
 
-    %% Central Extraction Manifold (5 Data Paths Merging Into Feature Class)
-    A --> J
-    B --> J
-    C --> J
-    H --> J
-    I --> J
+    %% Feature generation to training data
+    S3 --> T1
 
-    %% Post-Extraction Path
-    J --> K
-    K --> L
+    %% Training data and environmental data feeding downstream scripts
+    T1 --> O1
+    T1 --> O2
+    T1 --> O3
+    T1 --> O4
 
-    %% The Linear Regression Multi-Funnels
-    L --> M
-    L --> N
-    L --> O
-
-    %% Global Asset Bypasses
-    H -.-> M
-    H -.-> O
-    I -.-> M
-    I -.-> O
-    G --> O
+    %% Assigning Classes for Visual Distinction
+    class I1,I2,I3,I4,I5 input;
+    class P1,P2,T1 intermediate;
+    class S1,S2,S3 script;
+    class O1,O2,O3,O4 output;
 ```
 
 ### Scripts
