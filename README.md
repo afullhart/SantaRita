@@ -3,35 +3,51 @@
 graph TD
     classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
     classDef script fill:#e1f5fe,stroke:#3182bd,stroke-width:2px;
+    classDef invisible stroke-width:0px, color:transparent;
 
-    %% Data Sources
+    %% Data Sources (Top Row)
     DEM_Raw[(USGS 3DEP 1m)]:::input
     S2_Raw[(Sentinel-2 SR)]:::input
     UAS_Raw[(Classified sUAS Orthos)]:::input
 
-    %% Processing Scripts
+    %% Processing Scripts (Second Row)
     DEM_Export[Export_10m_DEM.js]:::script
     Cloud_Export[Export_Cloud_FeatureClass.js]:::script
     FC_Model[Model_FeatureClass.js]:::script
 
-    %% Modeling Core
+    %% Central Chokepoint (Third Row)
     Reg_Model[Model_Regressions.js]:::script
 
-    %% Visualization & Analysis
+    %% Visualization Scripts (Bottom Row)
     Vis_Model[Model_Visualization.js]:::script
     Comp_RAP[RAP_Comparison.js]:::script
     Vis_RAP[RAP_Visualization.js]:::script
 
-    %% Flow (Strictly matching the drawing)
+    %% Flow Definitions
     DEM_Raw --> DEM_Export
     S2_Raw --> Cloud_Export
     UAS_Raw --> FC_Model
 
+    %% Funnel into the regression script
+    DEM_Export --> Reg_Model
+    Cloud_Export --> Reg_Model
     FC_Model --> Reg_Model
 
+    %% Fan out to the visualization scripts
     Reg_Model --> Vis_Model
     Reg_Model --> Comp_RAP
     Reg_Model --> Vis_RAP
+
+    %% --- INVISIBLE LINKS TO FORCE LAYOUT ---
+    %% These force the top and bottom rows to render horizontally next to each other
+    DEM_Raw ~~~ S2_Raw
+    S2_Raw ~~~ UAS_Raw
+    
+    DEM_Export ~~~ Cloud_Export
+    Cloud_Export ~~~ FC_Model
+    
+    Vis_Model ~~~ Comp_RAP
+    Comp_RAP ~~~ Vis_RAP
 ```
 
 ### Scripts
