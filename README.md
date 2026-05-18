@@ -98,9 +98,9 @@ graph TD
 
 ### Data sources
 * **`5cm Classified Images`**: https://gee-community-catalog.org/projects/srer_drone/
-* **`Drone Image Footprints`**:
-* **`Ecological Survey Footprints`**:
-* **`10m Sentinel-2 Images`**:
-* **`Export_10m_DEM.js`**:
-* **`Export_Cloud_FeatureClass.js`**:
-* **`SRER Footprint`**:
+* **`Drone Image Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
+* **`Ecological Survey Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
+* **`10m Sentinel-2 Images`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+* **`Export_10m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
+* **`Export_Cloud_FeatureClass.js`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+* **`SRER Footprint`**: https://www.arcgis.com/home/item.html?id=1fa8b9b97e844aaf8170a95c6e2a3b76
