@@ -5,41 +5,64 @@ config:
   layout: elk
 ---
 flowchart TD
-    A[5cm classified images]
-    B[Drone image Footprints]
-    C[Ecological Survey Footprints]
-    D[10m Sentinel-2 images]
-    E[Export_10m_DEM.js]
-    F[Export_Cloud_FeatureClass.js]
-    G[SRER Footprint]
-    
-    H[10m USGS Resampled DEM]
-    I[Cloud-Free Feature Class]
-    
-    J[Model_FeatureClass.js]
-    K[Training Feature Class]
-    
-    L[Model_Regressions.js]
-    M[Model_Visualization.js]
-    N[RAP_Comparison.js]
-    O[RAP_Visualization.js]
-    
-    A --> J
-    B --> J
-    C --> J
+    classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
+    classDef script fill:#e1f5fe,stroke:#3182bd,stroke-width:2px;
+    classDef asset fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+
+    %% Data Sources (Top Row Inputs)
+    A[5cm classified images]:::input
+    B[Drone image Footprints]:::input
+    C[Ecological Survey Footprints]:::input
+    D[10m Sentinel-2 images]:::input
+    E[Export_10m_DEM.js]:::script
+    F[Export_Cloud_FeatureClass.js]:::script
+    G[SRER Footprint]:::input
+
+    %% Intermediate Assets (The First Manifold Stage)
+    H[10m USGS Resampled DEM]:::asset
+    I[Cloud-Free Feature Class]:::asset
+
+    %% Feature Extraction Core
+    J[Model_FeatureClass.js]:::script
+    K[Training Feature Class]:::asset
+
+    %% Analysis & Execution
+    L[Model_Regressions.js]:::script
+
+    %% Downstream Visualization & Comparison (Bottom Row Outputs)
+    M[Model_Visualization.js]:::script
+    N[RAP_Comparison.js]:::script
+    O[RAP_Visualization.js]:::script
+
+    %% --- CONNECTIONS & FLOW ---
+
+    %% Pre-Processing Flows
     D --> H
     E --> H
     F --> I
-    G --> O
-    
+
+    %% Central Extraction Manifold (5 Data Paths Merging Into Feature Class)
+    A --> J
+    B --> J
+    C --> J
     H --> J
     I --> J
-    
+
+    %% Post-Extraction Path
     J --> K
     K --> L
-    K --> M
-    K --> N
-    K --> O
+
+    %% The Linear Regression Multi-Funnels
+    L --> M
+    L --> N
+    L --> O
+
+    %% Global Asset Bypasses (Routing intermediate assets around training directly to UI scripts)
+    H -.->|Terrain Bypass| M
+    H -.->|Terrain Bypass| O
+    I -.->|Temporal Bypass| M
+    I -.->|Temporal Bypass| O
+    G -->|Boundary Boundary| O
 ```
 
 ### Scripts
