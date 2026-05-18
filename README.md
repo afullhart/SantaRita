@@ -5,6 +5,7 @@ graph TD
     classDef intermediate fill:#fff3e0,stroke:#ffb74d,stroke-width:2px;
     classDef script fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
     classDef output fill:#ede7f6,stroke:#7e57c2,stroke-width:2px;
+    classDef junction fill:#333,stroke:#333,circle;
 
     %% --- LEVEL 1: INPUT DATA & RAW TEXTURES ---
     subgraph Inputs [Data Sources & Footprints]
@@ -25,7 +26,11 @@ graph TD
         P2["Cloud-Free Feature Class"]
     end
 
-    %% --- LEVEL 3: FEATURE ENGINEERING & TRAINING ---
+    %% --- THE NEW JOINT J1 ---
+    %% This node is outside of all subgraphs to be in the shared space.
+    J1(( )):::junction
+
+    %% --- LEVEL 3: FEATURE ENGINEERING & TRAINING (Moved Left) ---
     subgraph CoreModel [Model Feature Engineering & Training]
         S3["Model_FeatureClass.js"]
         T1["Training Feature Class"]
@@ -49,16 +54,19 @@ graph TD
     S1 --> P1
     S2 --> P2
 
-    %% Right-side environmental data pipeline feeding into Feature Class script
-    I4 --> S3
-    P1 --> S3
-    P2 --> S3
-    I5 --> S3
+    %% --- INPUTS TO THE NEW JOINT ---
+    I4 --> J1
+    P1 --> J1
+    P2 --> J1
+    I5 --> J1
+
+    %% JOINT TO FEATURE CLASS SCRIPT
+    J1 --> S3
 
     %% Feature generation to training data
     S3 --> T1
 
-    %% Training data and environmental data feeding downstream scripts
+    %% Training data feeding downstream scripts
     T1 --> O1
     T1 --> O2
     T1 --> O3
