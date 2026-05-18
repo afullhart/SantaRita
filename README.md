@@ -1,6 +1,6 @@
 
 ```mermaid
-graph LR
+graph TD
     classDef input fill:#f9f9f9,stroke:#333,stroke-width:2px;
     classDef script fill:#e1f5fe,stroke:#3182bd,stroke-width:2px;
 
@@ -13,6 +13,8 @@ graph LR
     DEM_Export[Export_10m_DEM.js]:::script
     Cloud_Export[Export_Cloud_FeatureClass.js]:::script
     FC_Model[Model_FeatureClass.js]:::script
+
+    %% Modeling Core
     Reg_Model[Model_Regressions.js]:::script
 
     %% Visualization & Analysis
@@ -20,25 +22,16 @@ graph LR
     Comp_RAP[RAP_Comparison.js]:::script
     Vis_RAP[RAP_Visualization.js]:::script
 
-    %% Flow
+    %% Flow (Strictly matching the drawing)
     DEM_Raw --> DEM_Export
     S2_Raw --> Cloud_Export
-
     UAS_Raw --> FC_Model
-    DEM_Export -->|10m DEM Asset| FC_Model
-    Cloud_Export -->|Optimal Dates| FC_Model
 
-    FC_Model -->|Training Data| Reg_Model
+    FC_Model --> Reg_Model
 
-    Reg_Model -->|Hyperparameters| Vis_Model
-    Reg_Model -->|Validation| Comp_RAP
-    Reg_Model -->|Hyperparameters| Vis_RAP
-
-    %% Asset Dependencies
-    DEM_Export -.-> Vis_Model
-    DEM_Export -.-> Vis_RAP
-    Cloud_Export -.-> Vis_Model
-    Cloud_Export -.-> Vis_RAP
+    Reg_Model --> Vis_Model
+    Reg_Model --> Comp_RAP
+    Reg_Model --> Vis_RAP
 ```
 
 ### Scripts
