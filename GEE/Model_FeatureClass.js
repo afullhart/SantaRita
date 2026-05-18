@@ -12,6 +12,7 @@ var v_classified_sep = ee.Image('users/gponce/usda_ars/assets/images/aes/srer/su
 
 var v_foot_prints = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_drone_footprints');
 
+// Import the ecological states polygons again
 var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ecological_states')
                      .map(function(ft){
                        return ft.set('area_ha', ft.area(1).divide(10000)); 
@@ -23,7 +24,6 @@ var v_extent = bounds_geom.bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING
 // =========================================================================
-// Calculate terrain properties in radians once for the whole script
 var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
 var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
@@ -44,7 +44,7 @@ var sep_start = ee.String(sep_window.get('Start_Date'));
 var sep_end   = ee.Date(sep_start).advance(7, 'day');
 
 // =========================================================================
-// PART 1: STATIC GRID GENERATION
+// PART 1: STATIC GRID GENERATION (FOOTPRINTS ONLY)
 // =========================================================================
 
 // Extract projection from a single image in the collection to build the grid
@@ -57,13 +57,11 @@ var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Generate the base Sentinel-2 pixel grid
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
 
-// Pre-filter the grid so we don't calculate overlap on empty space
-var focused_grid = sent2_grid.filterBounds(v_srer_polys).filterBounds(v_foot_prints);
+// Pre-filter the grid bounds strictly by drone footprints
+var focused_grid = sent2_grid.filterBounds(v_foot_prints);
 
-// Create a high-resolution binary mask (1) where the footprints and polygons overlap
-var footprint_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
-var poly_mask = ee.Image.constant(0).paint(v_srer_polys, 1);
-var valid_area_mask = footprint_mask.and(poly_mask);
+// Create a high-resolution binary mask (1) ONLY where the footprints overlap
+var valid_area_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
 
 // Calculate the exact percentage of overlap for every grid cell
 var grid_overlap = valid_area_mask.reduceRegions({
@@ -74,25 +72,43 @@ var grid_overlap = valid_area_mask.reduceRegions({
   tileScale: 4
 });
 
-// Filter for strict 100% overlap
+// Filter for strict 100% overlap with drone footprints
 var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
-// Transfer the polygon attributes to your perfectly overlapping grid cells
+// --- OUTER SPATIAL JOIN ---
+// Keep all footprints, but fetch polygon attributes if they overlap
 var v_spatial_filter = ee.Filter.intersects({leftField:'.geo', rightField:'.geo', maxError:1});
-var v_saveAllJoin = ee.Join.saveAll({matchesKey:'polys'});
+var v_saveFirstJoin = ee.Join.saveFirst({matchKey: 'poly', outer: true});
 
-var v_sent2_joined_grids = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
-  .map(function (ft){
-    var ft1 = ee.Feature(ee.List(ft.get('polys')).get(0));
+var v_sent2_joined_grids = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
+  .map(function(ft) {
+    // Check if the join successfully attached a polygon
+    var hasPoly = ft.propertyNames().contains('poly');
+    
+    // Safely extract the polygon if it exists, otherwise provide blank defaults
+    var polyFeat = ee.Feature(ee.Algorithms.If(
+      hasPoly,
+      ft.get('poly'),
+      ee.Feature(null, {
+        'Plant_Comm': '', 
+        'Pasture': '', 
+        'Transect': '', 
+        'Utility': '', 
+        'S_Desc': '', 
+        'Exclosure': '', 
+        'area_ha': null
+      })
+    ));
+
     return ft.set({
-      'Plant_Comm': ft1.get('Plant_Comm'),
-      'Pasture': ft1.get('Pasture'),
-      'Transect': ft1.get('Transect'),
-      'Utility': ft1.get('Utility'),
-      'S_Desc': ft1.get('S_Desc'),
-      'Exclosure': ft1.get('Exclosure'),
-      'area_ha': ft1.get('area_ha'),
-      'polys': null 
+      'Plant_Comm': polyFeat.get('Plant_Comm'),
+      'Pasture': polyFeat.get('Pasture'),
+      'Transect': polyFeat.get('Transect'),
+      'Utility': polyFeat.get('Utility'),
+      'S_Desc': polyFeat.get('S_Desc'),
+      'Exclosure': polyFeat.get('Exclosure'),
+      'area_ha': polyFeat.get('area_ha'),
+      'poly': null // Strip the heavy geometry data to keep export clean
     });
   });
 
@@ -104,13 +120,11 @@ function extractS2Data(startDate, endDate, monthLabel) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
     .filterBounds(v_extent)                     
     .filterDate(startDate, endDate)
-    // --- Detect and delete malformed 2018 images BEFORE processing ---
     .map(function(img) {
       return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
     })
     .filter(ee.Filter.eq('has_aux_bands', true))
     .map(function(img) {
-      // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
       var scl = img.select('SCL');
       var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
@@ -130,21 +144,17 @@ function extractS2Data(startDate, endDate, monthLabel) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
       
-      // Calculate the illumination condition and add it as a new band
       var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
       return maskedImg.addBands(illumination);
     });                
 
-  // Reduce the collection to a median composite
   var sent2_median = sent2_ic.median().clip(v_extent);
 
-  // Extract optical bands and apply scale factor
   var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
     .multiply(0.0001) 
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
-  // Calculate Indices
   var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
   var mcari = optical_bands.expression(
       '((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
@@ -161,7 +171,6 @@ function extractS2Data(startDate, endDate, monthLabel) {
   }).rename('BSI');
   var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  // Combine optical bands, indices, illumination, slope, and ASPECT
   var final_img = optical_bands.addBands([
     ndvi, mcari, bsi, nbr2, 
     sent2_median.select('illumination'), 
@@ -169,12 +178,12 @@ function extractS2Data(startDate, endDate, monthLabel) {
     terrain_aspect.rename('aspect')
   ]);
   
-  // Define exactly what to extract so it gets attached to the grid features
   var bandsToExtract = final_img.select([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
     'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
   ]);
 
+  // Use the Outer Joined grid collection
   var gridWithMonth = v_sent2_joined_grids.map(function(feat) {
     return feat.set('Month', monthLabel);
   });
@@ -187,18 +196,15 @@ function extractS2Data(startDate, endDate, monthLabel) {
     tileScale: 4
   });
 
-  // Filter out any cells that fall outside the satellite coverage
   return extracted.filter(ee.Filter.notNull([
     'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
     'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
   ]));
 }
 
-// Pass the variables from the dynamic query into the extraction function
 var may_s2_data = extractS2Data(may_start, may_end, 'May');
 var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept');
 
-// Force the grid geometries into WGS84 UTM Zone 12N (Meters)
 var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 
@@ -210,17 +216,14 @@ var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 
 function processMonthMetrics(grid_subset, classified_img) {
   var native_proj = classified_img.projection();
   
-  // Define BOTH masks
-  var binary = classified_img.eq(3).selfMask();       // Bare Ground Mask
-  var obstacles = classified_img.neq(3).selfMask();   // Vegetation/Obstacle Mask
+  var binary = classified_img.eq(3).selfMask();       
+  var obstacles = classified_img.neq(3).selfMask();   
 
   return grid_subset.map(function(ft){
     
     // --- BGR Calculation ---
     var v_area_image = binary.multiply(ee.Image.pixelArea());
-    
     var v_area_ft = ft.area(0.05); 
-    
     var v_area = v_area_image.reduceRegion({
       reducer: ee.Reducer.sum(),
       geometry: ft.geometry(),
@@ -280,11 +283,9 @@ function processMonthMetrics(grid_subset, classified_img) {
   });
 }
 
-// Pass the UTM-transformed data into the metric processor
 var final_may = processMonthMetrics(may_s2_utm, v_classified_may);
 var final_sep = processMonthMetrics(sep_s2_utm, v_classified_sep);
 
-// Now we merge them for the final export
 var final_combined = final_may.merge(final_sep);
 
 // =========================================================================
@@ -303,4 +304,3 @@ Export.table.toAsset({
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
   description: 'FC_asset'
 });
-
