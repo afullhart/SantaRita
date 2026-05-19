@@ -24,11 +24,12 @@ var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .projection();
 
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
-var focused_grid = sent2_grid.filterBounds(v_srer_polys).filterBounds(v_foot_prints);
 
-var footprint_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
-var poly_mask = ee.Image.constant(0).paint(v_srer_polys, 1);
-var valid_area_mask = footprint_mask.and(poly_mask);
+// Removed the v_srer_polys filter here so it covers all drone prints
+var focused_grid = sent2_grid.filterBounds(v_foot_prints);
+
+// Mask only the drone footprints
+var valid_area_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
 
 var grid_overlap = valid_area_mask.reduceRegions({
   collection: focused_grid,
@@ -41,20 +42,27 @@ var grid_overlap = valid_area_mask.reduceRegions({
 var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
 var v_spatial_filter = ee.Filter.intersects({leftField:'.geo', rightField:'.geo', maxError:1});
-var v_saveAllJoin = ee.Join.saveAll({matchesKey:'polys'});
 
-// The clean base grid with just polygon attributes
-var base_grid = v_saveAllJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
+// Use saveFirst with outer: true to keep grid cells that don't match a polygon (Left Outer Join)
+var v_saveFirstJoin = ee.Join.saveFirst({
+  matchKey: 'poly_match',
+  outer: true
+});
+
+// The clean base grid conditionally setting polygon attributes
+var base_grid = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
   .map(function (ft){
-    var ft1 = ee.Feature(ee.List(ft.get('polys')).get(0));
+    var match = ft.get('poly_match');
+    
+    // If there is a match, get the property. If not, return a blank string.
+    var plantComm = ee.Algorithms.If(match, ee.Feature(match).get('Plant_Comm'), '');
+    var pasture = ee.Algorithms.If(match, ee.Feature(match).get('Pasture'), '');
+    var sDesc = ee.Algorithms.If(match, ee.Feature(match).get('S_Desc'), '');
+
     return ee.Feature(ft.geometry()).set({
-      'Plant_Comm': ft1.get('Plant_Comm'),
-      'Pasture': ft1.get('Pasture'),
-      'Transect': ft1.get('Transect'),
-      'Utility': ft1.get('Utility'),
-      'S_Desc': ft1.get('S_Desc'),
-      'Exclosure': ft1.get('Exclosure'),
-      'area_ha': ft1.get('area_ha')
+      'Plant_Comm': plantComm,
+      'Pasture': pasture,
+      'S_Desc': sDesc
     });
   });
 
@@ -72,7 +80,7 @@ var sep_grid = base_grid.map(function(f) {
   return f.set('month', 'Sept');
 });
 
-// Merge them into one master dataset (7,144 rows)
+// Merge them into one master dataset
 var final_shapefile_grid = may_grid.merge(sep_grid);
 
 // Transform geometries to UTM Zone 12N
@@ -84,6 +92,6 @@ var final_utm_grid = final_shapefile_grid.map(function(f) {
 Export.table.toDrive({
   collection: final_utm_grid,
   description: 'SRER_Grid',
-  folder: 'GEE_Downloads', // Change folder name if desired
+  folder: 'GEE_Downloads',
   fileFormat: 'SHP'
 });
