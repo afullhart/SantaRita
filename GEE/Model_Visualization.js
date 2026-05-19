@@ -24,6 +24,10 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
+// We kept null features in the asset to align with the shapefile geometry,
+// but the classifier requires valid numbers. We drop them here right before training.
+var training_fc = fc.filter(ee.Filter.notNull(inputProps));
+
 // --- Hyperparameters ---
 var goldilocks_params = {
   numberOfTrees: 300,
@@ -34,11 +38,11 @@ var goldilocks_params = {
 };
 
 var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
-  .setOutputMode('REGRESSION').train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'BGR', inputProperties: inputProps});
 var model_lpi = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
-  .setOutputMode('REGRESSION').train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'LPI', inputProperties: inputProps});
 var model_mft = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
-  .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
 // SENTINEL-2 EXTRACTION
