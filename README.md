@@ -1,6 +1,8 @@
 ```mermaid
 ---
 title: GEE Workflow
+config:
+  themeCSS: ".title { font-size: 36px !important; font-weight: bold; }"
 ---
 graph TD
   %% Styling Definitions
