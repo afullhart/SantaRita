@@ -1,101 +1,96 @@
-// =========================================================================
-// SETUP & ASSETS
-// =========================================================================
-
+// ========================================================================= 
+// SETUP & ASSETS 
+// ========================================================================= 
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
-
-// Extract the raw Geometry from the first feature directly
-var bounds_geom = bounds_fc.first().geometry();
-
+// Extract the raw Geometry from the first feature directly 
+var bounds_geom = bounds_fc.first().geometry(); 
 var v_classified_may = ee.Image('users/gponce/usda_ars/assets/images/aes/srer/suas/2019/full_ortho_classified_may_2019_5cm');
 var v_classified_sep = ee.Image('users/gponce/usda_ars/assets/images/aes/srer/suas/2019/full_ortho_classified_sep_2019_5cm');
-
 var v_foot_prints = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_drone_footprints');
 
-// Import the ecological states polygons again
+// Import the ecological states polygons again 
 var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ecological_states')
-                     .map(function(ft){
-                       return ft.set('area_ha', ft.area(1).divide(10000)); 
-                     });
+  .map(function(ft){
+    return ft.set('area_ha', ft.area(1).divide(10000));
+  });
 
-// Safely returns an ee.Geometry bounding box
-var v_extent = bounds_geom.bounds();
+// Safely returns an ee.Geometry bounding box 
+var v_extent = bounds_geom.bounds(); 
 
-// =========================================================================
-// TOPOGRAPHIC PRE-PROCESSING
-// =========================================================================
+// ========================================================================= 
+// TOPOGRAPHIC PRE-PROCESSING 
+// ========================================================================= 
 var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
-var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180);
+var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180); 
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
-// =========================================================================
-// DYNAMIC DATES (PULLED FROM CLOUD ASSET)
-// =========================================================================
+// ========================================================================= 
+// DYNAMIC DATES (PULLED FROM CLOUD ASSET) 
+// ========================================================================= 
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
 
-// Query the asset for May 2019
+// Query the asset for May 2019 
 var may_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 5)).first());
-var may_start = ee.String(may_window.get('Start_Date'));
+var may_start = ee.String(may_window.get('Start_Date')); 
 var may_end   = ee.Date(may_start).advance(7, 'day'); // 7-day exclusive filter limit
 
-// Query the asset for Sept 2019
+// Query the asset for Sept 2019 
 var sep_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 9)).first());
-var sep_start = ee.String(sep_window.get('Start_Date'));
+var sep_start = ee.String(sep_window.get('Start_Date')); 
 var sep_end   = ee.Date(sep_start).advance(7, 'day');
 
-// =========================================================================
-// PART 1: STATIC GRID GENERATION (FOOTPRINTS ONLY)
-// =========================================================================
-
-// Extract projection from a single image in the collection to build the grid
+// ========================================================================= 
+// PART 1: STATIC GRID GENERATION (FOOTPRINTS ONLY) 
+// ========================================================================= 
+// Extract projection from a single image in the collection to build the grid 
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(v_extent)
   .first()
   .select('B2')
   .projection();
 
-// Generate the base Sentinel-2 pixel grid
+// Generate the base Sentinel-2 pixel grid 
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
 
-// Pre-filter the grid bounds strictly by drone footprints
+// Pre-filter the grid bounds strictly by drone footprints 
 var focused_grid = sent2_grid.filterBounds(v_foot_prints);
 
-// Create a high-resolution binary mask (1) ONLY where the footprints overlap
+// Create a high-resolution binary mask (1) ONLY where the footprints overlap 
 var valid_area_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
 
-// Calculate the exact percentage of overlap for every grid cell
+// Calculate the exact percentage of overlap for every grid cell 
 var grid_overlap = valid_area_mask.reduceRegions({
   collection: focused_grid,
   reducer: ee.Reducer.mean(),
-  scale: 1, 
+  scale: 1,
   crs: projSent2.crs(),
-  tileScale: 4
+  tileScale: 4 
 });
 
-// Filter for strict 100% overlap with drone footprints
+// Filter for strict 100% overlap with drone footprints 
 var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
 // --- OUTER SPATIAL JOIN ---
-// Keep all footprints, but fetch polygon attributes if they overlap
+// Keep all footprints, but fetch polygon attributes if they overlap 
 var v_spatial_filter = ee.Filter.intersects({leftField:'.geo', rightField:'.geo', maxError:1});
-var v_saveFirstJoin = ee.Join.saveFirst({matchKey: 'poly', outer: true});
 
+var v_saveFirstJoin = ee.Join.saveFirst({matchKey: 'poly', outer: true}); 
 var v_sent2_joined_grids = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spatial_filter)
   .map(function(ft) {
     // Check if the join successfully attached a polygon
     var hasPoly = ft.propertyNames().contains('poly');
     
-    // Safely extract the polygon if it exists, otherwise provide blank defaults
+    // Safely extract the polygon if it exists, otherwise provide blank defaults 
     var polyFeat = ee.Feature(ee.Algorithms.If(
       hasPoly,
       ft.get('poly'),
       ee.Feature(null, {
-        'Plant_Comm': '', 
-        'Pasture': '', 
-        'Transect': '', 
-        'Utility': '', 
-        'S_Desc': '', 
-        'Exclosure': '', 
+        'Plant_Comm': '',
+        'Pasture': '',
+        'Transect': '',
+        'Utility': '',
+        'S_Desc': '',
+        'Exclosure': '',
         'area_ha': null
       })
     ));
@@ -108,17 +103,16 @@ var v_sent2_joined_grids = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spa
       'S_Desc': polyFeat.get('S_Desc'),
       'Exclosure': polyFeat.get('Exclosure'),
       'area_ha': polyFeat.get('area_ha'),
-      'poly': null // Strip the heavy geometry data to keep export clean
+      'poly': null // Strip the heavy geometry data to keep export clean 
     });
   });
 
+// ========================================================================= 
+// PART 2: EXTRACT SENTINEL-2 & TOPOGRAPHIC PREDICTORS 
 // =========================================================================
-// PART 2: EXTRACT SENTINEL-2 & TOPOGRAPHIC PREDICTORS
-// =========================================================================
-
 function extractS2Data(startDate, endDate, monthLabel) {
   var sent2_ic = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-    .filterBounds(v_extent)                     
+    .filterBounds(v_extent)
     .filterDate(startDate, endDate)
     .map(function(img) {
       return img.set('has_aux_bands', img.bandNames().contains('MSK_CLDPRB'));
@@ -132,7 +126,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
-      // --- Calculate Illumination (NO DIVISION APPLIED) ---
+      // --- Calculate Illumination (NO DIVISION APPLIED) --- 
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
       
@@ -147,43 +141,44 @@ function extractS2Data(startDate, endDate, monthLabel) {
       var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
       
       return maskedImg.addBands(illumination);
-    });                
+    });
 
-  var sent2_median = sent2_ic.median().clip(v_extent);
-
+  var sent2_median = sent2_ic.median().clip(v_extent); 
   var optical_bands = sent2_median.select(['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12'])
-    .multiply(0.0001) 
+    .multiply(0.0001)
     .setDefaultProjection({crs: projSent2.crs(), scale: projSent2.nominalScale()});
 
   var ndvi = optical_bands.normalizedDifference(['B8', 'B4']).rename('NDVI');
   var mcari = optical_bands.expression(
-      '((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
-        'B3': optical_bands.select('B3'), 
-        'B4': optical_bands.select('B4'), 
-        'B5': optical_bands.select('B5')  
-  }).rename('MCARI');
+    '((B5 - B4) - 0.2 * (B5 - B3)) * (B5 / B4)', {
+      'B3': optical_bands.select('B3'),
+      'B4': optical_bands.select('B4'),
+      'B5': optical_bands.select('B5')
+    }).rename('MCARI');
+
   var bsi = optical_bands.expression(
-      '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
-        'B2':  optical_bands.select('B2'),
-        'B4':  optical_bands.select('B4'),
-        'B8':  optical_bands.select('B8'),
-        'B11': optical_bands.select('B11')
-  }).rename('BSI');
+    '((B11 + B4) - (B8 + B2)) / ((B11 + B4) + (B8 + B2))', {
+      'B2':  optical_bands.select('B2'),
+      'B4':  optical_bands.select('B4'),
+      'B8':  optical_bands.select('B8'),
+      'B11': optical_bands.select('B11')
+    }).rename('BSI');
+
   var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
   var final_img = optical_bands.addBands([
-    ndvi, mcari, bsi, nbr2, 
-    sent2_median.select('illumination'), 
-    terrain_slope.rename('slope'), 
+    ndvi, mcari, bsi, nbr2,
+    sent2_median.select('illumination'),
+    terrain_slope.rename('slope'),
     terrain_aspect.rename('aspect')
   ]);
-  
+
   var bandsToExtract = final_img.select([
-    'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
+    'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12',
     'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
   ]);
 
-  // Use the Outer Joined grid collection
+  // Use the Outer Joined grid collection 
   var gridWithMonth = v_sent2_joined_grids.map(function(feat) {
     return feat.set('Month', monthLabel);
   });
@@ -196,57 +191,51 @@ function extractS2Data(startDate, endDate, monthLabel) {
     tileScale: 4
   });
 
-  return extracted.filter(ee.Filter.notNull([
-    'B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 
-    'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'
-  ]));
-}
+  // Return the collection directly to retain null values
+  return extracted;
+} 
 
-var may_s2_data = extractS2Data(may_start, may_end, 'May');
-var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept');
-
+var may_s2_data = extractS2Data(may_start, may_end, 'May'); 
+var sep_s2_data = extractS2Data(sep_start, sep_end, 'Sept'); 
 var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 
-
+// ========================================================================= 
+// PART 3: DRONE METRICS (BGR, LPI, MFT) 
 // =========================================================================
-// PART 3: DRONE METRICS (BGR, LPI, MFT)
-// =========================================================================
-
 function processMonthMetrics(grid_subset, classified_img) {
   var native_proj = classified_img.projection();
+  var binary = classified_img.eq(3).selfMask(); 
+  var obstacles = classified_img.neq(3).selfMask(); 
   
-  var binary = classified_img.eq(3).selfMask();       
-  var obstacles = classified_img.neq(3).selfMask();   
-
   return grid_subset.map(function(ft){
     
-    // --- BGR Calculation ---
+    // --- BGR Calculation --- 
     var v_area_image = binary.multiply(ee.Image.pixelArea());
-    var v_area_ft = ft.area(0.05); 
+    var v_area_ft = ft.area(0.05);
     var v_area = v_area_image.reduceRegion({
       reducer: ee.Reducer.sum(),
       geometry: ft.geometry(),
       scale: 0.05,
       maxPixels: 1e13
-     }).get('classification');
+    }).get('classification');
     var v_pct_area = ee.Number(v_area).divide(v_area_ft).multiply(100);
 
-    // --- LPI Calculation ---
+    // --- LPI Calculation --- 
     var patch_vectors = binary.reduceToVectors({
       reducer: ee.Reducer.countEvery(),
-      geometry: ft.geometry(),        
-      scale: 0.05,                    
+      geometry: ft.geometry(),
+      scale: 0.05,
       crs: native_proj.crs(),
       geometryType: 'polygon',
       eightConnected: true,
       labelProperty: 'class_val',
-      maxPixels: 1e13,                
-      tileScale: 16                   
+      maxPixels: 1e13,
+      tileScale: 16
     });
-    
+
     var patches_with_area = patch_vectors.map(function(feat){
-      return feat.set('area_sqm', feat.area(0.05)); 
+      return feat.set('area_sqm', feat.area(0.05));
     });
     
     var areas = patches_with_area.aggregate_array('area_sqm');
@@ -256,51 +245,47 @@ function processMonthMetrics(grid_subset, classified_img) {
       0
     );
 
-    // --- MFT Calculation ---
+    // --- MFT Calculation --- 
     function Get_Mean_Fetch(obstacle_mask, bare_mask, v_points) {
       var v_distance = obstacle_mask.fastDistanceTransform().sqrt().multiply(ee.Image.pixelArea().sqrt()).rename("distance");
-      var fetch_on_bare = v_distance.updateMask(bare_mask);
-
+      var fetch_on_bare = v_distance.updateMask(bare_mask); 
       v_points = fetch_on_bare.reduceRegions({
         collection: v_points,
         reducer: ee.Reducer.first().setOutputs(["distance"]),
         scale: 0.05
       });
-      
+
       var valid_points = v_points.filter(ee.Filter.notNull(['distance']));
       var raw_mean = valid_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean');
       var final_mean = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_mean, null), 0, raw_mean);
-
+      
       return ee.Number(final_mean);
-    }
-
+    } 
+    
     var N_PTS = 1000;
     var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1234, 0.05);
-    
     var v_nearestMeanValues = Get_Mean_Fetch(obstacles, binary, v_rnd);
 
     return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
-  });
-}
+  }); 
+} 
 
-var final_may = processMonthMetrics(may_s2_utm, v_classified_may);
-var final_sep = processMonthMetrics(sep_s2_utm, v_classified_sep);
-
+var final_may = processMonthMetrics(may_s2_utm, v_classified_may); 
+var final_sep = processMonthMetrics(sep_s2_utm, v_classified_sep); 
 var final_combined = final_may.merge(final_sep);
 
+// ========================================================================= 
+// EXPORTS 
 // =========================================================================
-// EXPORTS
-// =========================================================================
-
 Export.table.toDrive({
   collection: final_combined,
   description: 'SRER_Training_FeatureClass',
   folder: 'GEE_Downloads',
-  fileFormat: 'CSV'
+  fileFormat: 'CSV' 
 });
 
 Export.table.toAsset({
   collection: final_combined,
   assetId: 'projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm',
-  description: 'FC_asset'
+  description: 'FC_asset' 
 });
