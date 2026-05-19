@@ -102,6 +102,13 @@ var sent2_sep = buildS2Composite(sep_start, sep_end);
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
 // =========================================================================
+// DROP NULLS FOR REGRESSION TRAINING
+// =========================================================================
+// We kept null features in the asset to align with the shapefile geometry,
+// but the classifier requires valid numbers. We drop them here right before training.
+fc = fc.filter(ee.Filter.notNull(inputProps));
+
+// =========================================================================
 // K-FOLDS CROSS VALIDATION (K=5) - UNIFIED MODEL
 // =========================================================================
 var k_folds = 5;
