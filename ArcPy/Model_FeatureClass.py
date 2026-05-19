@@ -9,9 +9,9 @@ import multiprocessing
 # USER INPUTS
 # ====================================================================
 # Using the original raw shapefile to prevent tectonic shifting
-input_gee_shapefile = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Model_Grid_Shp\SRER_Model_Grid_Export.shp'
+input_gee_shapefile = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Model_Grid_Input_Shp\SRER_Grid.shp'
 
-# The two seamless mosaics we generated
+# Two 5cm class mosaics
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
@@ -19,6 +19,8 @@ output_fc = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb
 
 # The exact name of the field in your shapefile containing the month data
 month_field_name = 'month' 
+
+
 
 # ====================================================================
 # WORKER FUNCTION (Runs on multiple cores simultaneously)
