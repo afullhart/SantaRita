@@ -7,10 +7,10 @@ from arcpy.sa import *
 # USER INPUT
 # ====================================================================
 source_tiff = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif"
-raw_shapefile = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Model_Grid_Shp\SRER_Model_Grid_Export.shp" 
+raw_shapefile = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Model_Grid_Input_Shp\SRER_Grid.shp" 
 grid_fc = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_Grid_Metrics_Final"
 
-target_oid = 4061 
+target_oid = 11622
 
 # ====================================================================
 # SETUP & DATA PREP
@@ -166,3 +166,4 @@ except Exception as e:
 finally:
     arcpy.management.Delete("memory")
     arcpy.CheckInExtension("Spatial")
+    
