@@ -35,12 +35,13 @@ existing_fields = [f.name for f in arcpy.ListFields(input_plots)]
 if 'Month' not in existing_fields:
   arcpy.management.AddField(input_plots, 'Month', 'TEXT', field_length=15)
 
-# 2. Add Metric Fields
+# 2. Add Metric Fields (Added 50cm and 100cm LPI BGR fields)
 new_fields = [
   ('Exact_BGR_Pct', 'DOUBLE'), ('Exact_LPI_Pct', 'DOUBLE'), ('Exact_Fetch_m', 'DOUBLE'),
   ('Exhaust_Gap_0_24', 'DOUBLE'), ('Exhaust_Gap_25_50', 'DOUBLE'), ('Exhaust_Gap_51_100', 'DOUBLE'),
   ('Exhaust_Gap_101_200', 'DOUBLE'), ('Exhaust_Gap_gt_200', 'DOUBLE'), ('Exhaust_Total_Gap', 'DOUBLE'),
-  ('NRI_BGR_Pct', 'DOUBLE'), ('NRI_Gap_0_24', 'DOUBLE'), ('NRI_Gap_25_50', 'DOUBLE'),
+  ('NRI_BGR_Pct', 'DOUBLE'), ('NRI_BGR_50cm_Pct', 'DOUBLE'), ('NRI_BGR_100cm_Pct', 'DOUBLE'),
+  ('NRI_Gap_0_24', 'DOUBLE'), ('NRI_Gap_25_50', 'DOUBLE'),
   ('NRI_Gap_51_100', 'DOUBLE'), ('NRI_Gap_101_200', 'DOUBLE'), ('NRI_Gap_gt_200', 'DOUBLE'),
   ('NRI_Total_Gap', 'DOUBLE')
 ]
@@ -50,7 +51,6 @@ for field_name, field_type in new_fields:
     arcpy.management.AddField(input_plots, field_name, field_type)
 
 # 3. Duplicate Rows for May & September
-# (Includes a safety check to prevent exponential duplication on re-runs)
 may_count, sep_count = 0, 0
 with arcpy.da.SearchCursor(input_plots, ['Month']) as cursor:
   for row in cursor:
@@ -61,14 +61,12 @@ if may_count == 0 and sep_count == 0:
   print('  -> First run detected. Generating temporal pairs...')
   sept_shapes = []
   
-  # Tag existing as May, store geometry for Sept
   with arcpy.da.UpdateCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
     for row in cursor:
       row[1] = 'May_2019'
       sept_shapes.append(row[0])
       cursor.updateRow(row)
       
-  # Insert new rows for Sept
   with arcpy.da.InsertCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
     for shape in sept_shapes:
       cursor.insertRow([shape, 'Sep_2019'])
@@ -88,14 +86,12 @@ with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
     plot_geom = row[0]
     month_val = row[1]
     
-    # Dynamically switch TIFF based on the feature's month tag
     active_tiff = may_tiff if month_val == 'May_2019' else sep_tiff
     print(f'  -> Processing Plot {i + 1} of {total_plots} [{month_val}]...')
     
     arcpy.env.snapRaster = active_tiff
     arcpy.env.cellSize = active_tiff
     
-    # Bypass Geometry Cache Issue
     temp_mask = f'memory\\mask_{i}'
     arcpy.management.CopyFeatures([plot_geom], temp_mask)
 
@@ -164,7 +160,14 @@ with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
       distances = np.linspace(start_buffer_m, start_buffer_m + transect_length_m, int(transect_length_m / cell_size))
       
       all_nri_transects = []
+      
+      # Tracking bins for standard, 50cm, and 100cm intervals
       spoke_bgr_pixels = 0
+      spoke_bgr_pixels_50cm = 0
+      spoke_bgr_pixels_100cm = 0
+      
+      total_pins_50cm = 0
+      total_pins_100cm = 0
       
       for az in [0, 120, 240]:
         az_rad = np.radians(az)
@@ -179,9 +182,25 @@ with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
         
         transect_values = main_array[rows, cols]
         all_nri_transects.append(transect_values)
+        
+        # Standard 5cm continuous measurement
         spoke_bgr_pixels += np.sum(transect_values == target_value)
+        
+        # 50cm Interval Measurement (every 10th pixel)
+        vals_50cm = transect_values[::10]
+        spoke_bgr_pixels_50cm += np.sum(vals_50cm == target_value)
+        total_pins_50cm += len(vals_50cm)
+        
+        # 100cm Interval Measurement (every 20th pixel)
+        vals_100cm = transect_values[::20]
+        spoke_bgr_pixels_100cm += np.sum(vals_100cm == target_value)
+        total_pins_100cm += len(vals_100cm)
       
+      # Calculate percentages across intervals
       nri_bgr = (float(spoke_bgr_pixels) / (len(distances) * 3)) * 100
+      nri_bgr_50cm = (float(spoke_bgr_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
+      nri_bgr_100cm = (float(spoke_bgr_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
+      
       total_nri_length_m = 3 * transect_length_m
 
       all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
@@ -198,7 +217,13 @@ with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
       # ==============================================================
       row[2] = exact_bgr; row[3] = exact_lpi; row[4] = exact_fetch
       row[5] = ex_0_24; row[6] = ex_25_50; row[7] = ex_51_100; row[8] = ex_101_200; row[9] = ex_gt_200; row[10] = ex_total
-      row[11] = nri_bgr; row[12] = nri_0_24; row[13] = nri_25_50; row[14] = nri_51_100; row[15] = nri_101_200; row[16] = nri_gt_200; row[17] = nri_total
+      
+      # Adjusted layout for the three BGR metrics followed by the Gap Fractions
+      row[11] = nri_bgr
+      row[12] = nri_bgr_50cm
+      row[13] = nri_bgr_100cm
+      
+      row[14] = nri_0_24; row[15] = nri_25_50; row[16] = nri_51_100; row[17] = nri_101_200; row[18] = nri_gt_200; row[19] = nri_total
       
       cursor.updateRow(row)
 
