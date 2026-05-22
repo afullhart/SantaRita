@@ -1,8 +1,5 @@
-# GEE Workflow
+### GEE Workflow for Predictive Landscape Metric Maps
 ```mermaid
----
-title: GEE Workflow
----
 graph TD
   %% Styling Definitions
   classDef input fill:#e1f5fe,stroke:#039be5,stroke-width:2px,stroke-dasharray: 3 3;
