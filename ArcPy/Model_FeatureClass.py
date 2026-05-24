@@ -20,8 +20,6 @@ output_fc = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb
 # The exact name of the field in your shapefile containing the month data
 month_field_name = 'month' 
 
-
-
 # ====================================================================
 # WORKER FUNCTION (Runs on multiple cores simultaneously)
 # ====================================================================
@@ -57,11 +55,13 @@ def process_grid_cell(data_packet):
         else:
             lpi_percent = 0.0
 
-        # --- 3. Mean Fetch ---
-        # FIX: Removed the '~' so distance is measured from bare ground to obstacles
+        # --- 3. Mean Fetch (Includes Obstacles as 0) ---
+        # distance_transform_edt calculates distance from True (bare) to nearest False (obstacle)
+        # False pixels (obstacles) automatically receive a distance of 0.0
         dist_array = distance_transform_edt(is_bare) * c_size
-        valid_fetch = dist_array[is_bare] 
-        mean_fetch_exact = np.mean(valid_fetch) if valid_fetch.size > 0 else 0.0
+        
+        # Calculate mean across ALL pixels in the cell matrix
+        mean_fetch_exact = np.mean(dist_array)
 
         # --- 4. CANOPY GAP FRACTIONS ---
         horizontal_transects = [main_array[i, :] for i in range(nrows)]
