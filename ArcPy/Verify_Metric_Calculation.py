@@ -92,14 +92,28 @@ try:
     
     lpi_percent = (float(max_patch_pixels) / float(total_valid_pixels)) * 100
 
-    # Mean Fetch
-    obstacle_class = Con(in_raster != target_value, 1)
-    fetch_dist_raster = EucDistance(obstacle_class)
-    fetch_bare_only = Con(in_raster == target_value, fetch_dist_raster)
+    # MODIFIED MEAN FETCH (Strict NumPy Override for 0s)
+    print("Calculating Mean Fetch (Including 0s)...")
     
-    fetch_array = arcpy.RasterToNumPyArray(fetch_bare_only)
-    valid_fetch = fetch_array[fetch_array > 0]
-    mean_fetch_exact = np.mean(valid_fetch) if valid_fetch.size > 0 else 0.0
+    # 1. Define obstacles (anything not bare ground)
+    obstacle_class = Con(in_raster != target_value, 1)
+    
+    # 2. Calculate Euclidean distance
+    fetch_dist_raster = EucDistance(obstacle_class)
+    
+    # 3. Force extraction to the exact 200x200 grid using lower_left
+    raw_fetch_array = arcpy.RasterToNumPyArray(fetch_dist_raster, lower_left, ncols, nrows)
+    
+    # 4. STRICT NUMPY OVERRIDE:
+    # If a pixel is NOT bare ground (3), force its fetch to 0.0
+    forced_fetch_array = np.where(main_array != target_value, 0.0, raw_fetch_array)
+    
+    # 5. Calculate the exact mean using the explicit sum / 40,000 pixels
+    sum_fetch = np.sum(forced_fetch_array)
+    mean_fetch_exact = sum_fetch / float(total_valid_pixels) 
+    
+    print(f"Debug -> Total Fetch Sum: {sum_fetch}")
+    print(f"Debug -> Divided by Total Pixels: {total_valid_pixels}")
 
     # ====================================================================
     # RAP CANOPY GAP FRACTIONS
