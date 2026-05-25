@@ -42,6 +42,7 @@ var sep_end   = ee.Date(sep_start).advance(7, 'day');
 // ========================================================================= 
 // PART 1: STATIC GRID GENERATION (FOOTPRINTS ONLY) 
 // ========================================================================= 
+// Extract projection from a single image in the collection to build the grid 
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(v_extent)
   .first()
@@ -51,24 +52,22 @@ var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Generate the base Sentinel-2 pixel grid 
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
 
-// Pre-filter the grid bounds strictly by drone footprints (THIS WAS MISSING!)
+// Pre-filter the grid bounds strictly by drone footprints 
 var focused_grid = sent2_grid.filterBounds(v_foot_prints);
 
-// Create a binary mask where BOTH May and Sept have valid data (1)
-var may_mask = v_classified_may.mask();
-var sep_mask = v_classified_sep.mask();
-var combined_mask = may_mask.and(sep_mask);
+// Create a high-resolution binary mask (1) ONLY where the footprints overlap 
+var valid_area_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
 
-// Calculate the exact percentage of valid data for every grid cell 
-var grid_overlap = combined_mask.reduceRegions({
+// Calculate the exact percentage of overlap for every grid cell 
+var grid_overlap = valid_area_mask.reduceRegions({
   collection: focused_grid,
   reducer: ee.Reducer.mean(),
-  scale: 1, // High precision scale to check 1m coverage
+  scale: 1,
   crs: projSent2.crs(),
   tileScale: 4 
 });
 
-// Filter for strict 99%+ overlap with BOTH drone mosaics
+// Filter for strict 99% overlap with drone footprints (Syncs to exact ArcPy geometry count)
 var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
 // --- OUTER SPATIAL JOIN ---
@@ -107,8 +106,6 @@ var v_sent2_joined_grids = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spa
       'poly': null // Strip the heavy geometry data to keep export clean 
     });
   });
-
-
 
 // ========================================================================= 
 // PART 2: EXTRACT SENTINEL-2 & TOPOGRAPHIC PREDICTORS 
@@ -194,7 +191,7 @@ function extractS2Data(startDate, endDate, monthLabel) {
     tileScale: 4
   });
 
-  // Return the collection directly to retain null values
+  // Return the collection directly to retain null values for 1:1 shapefile alignment
   return extracted;
 } 
 
@@ -248,11 +245,13 @@ function processMonthMetrics(grid_subset, classified_img) {
       0
     );
 
-    // --- 3. MFT Calculation (1000 Random Points) --- 
+    // --- 3. MFT Calculation (1000 Random Points + Void Barrier) --- 
     function Get_Mean_Fetch(c_image, geom) {
-      // Create a mask where bare ground = 1, obstacles = 0
-      // fastDistanceTransform computes distance to the nearest 0 (the obstacles!)
-      var bare_ground = c_image.eq(3);
+      // THE VOID FIX: Unmask the image with a dummy value (99).
+      // This converts all NoData edges into solid "obstacles", matching ArcPy's behavior
+      // and preventing the 38m runaway distance transform in incomplete September boundaries.
+      var solid_img = c_image.unmask(99);
+      var bare_ground = solid_img.eq(3);
       
       var v_distance = bare_ground.fastDistanceTransform().sqrt()
         .multiply(0.05) // Convert 5cm pixels to meters
@@ -276,7 +275,7 @@ function processMonthMetrics(grid_subset, classified_img) {
       
       // Divide sum by 1000 to get the Mean Fetch
       return ee.Number(safe_sum).divide(N_PTS);
-    }
+    } 
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
