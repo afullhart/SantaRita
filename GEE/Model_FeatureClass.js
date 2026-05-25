@@ -42,7 +42,6 @@ var sep_end   = ee.Date(sep_start).advance(7, 'day');
 // ========================================================================= 
 // PART 1: STATIC GRID GENERATION (FOOTPRINTS ONLY) 
 // ========================================================================= 
-// Extract projection from a single image in the collection to build the grid 
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
   .filterBounds(v_extent)
   .first()
@@ -52,22 +51,24 @@ var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
 // Generate the base Sentinel-2 pixel grid 
 var sent2_grid = v_extent.coveringGrid(projSent2, projSent2.nominalScale());
 
-// Pre-filter the grid bounds strictly by drone footprints 
+// Pre-filter the grid bounds strictly by drone footprints (THIS WAS MISSING!)
 var focused_grid = sent2_grid.filterBounds(v_foot_prints);
 
-// Create a high-resolution binary mask (1) ONLY where the footprints overlap 
-var valid_area_mask = ee.Image.constant(0).paint(v_foot_prints, 1);
+// Create a binary mask where BOTH May and Sept have valid data (1)
+var may_mask = v_classified_may.mask();
+var sep_mask = v_classified_sep.mask();
+var combined_mask = may_mask.and(sep_mask);
 
-// Calculate the exact percentage of overlap for every grid cell 
-var grid_overlap = valid_area_mask.reduceRegions({
+// Calculate the exact percentage of valid data for every grid cell 
+var grid_overlap = combined_mask.reduceRegions({
   collection: focused_grid,
   reducer: ee.Reducer.mean(),
-  scale: 1,
+  scale: 1, // High precision scale to check 1m coverage
   crs: projSent2.crs(),
   tileScale: 4 
 });
 
-// Filter for strict 100% overlap with drone footprints 
+// Filter for strict 99%+ overlap with BOTH drone mosaics
 var final_grid = grid_overlap.filter(ee.Filter.gte('mean', 0.99));
 
 // --- OUTER SPATIAL JOIN ---
@@ -106,6 +107,8 @@ var v_sent2_joined_grids = v_saveFirstJoin.apply(final_grid, v_srer_polys, v_spa
       'poly': null // Strip the heavy geometry data to keep export clean 
     });
   });
+
+
 
 // ========================================================================= 
 // PART 2: EXTRACT SENTINEL-2 & TOPOGRAPHIC PREDICTORS 
@@ -205,12 +208,12 @@ var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 
 // =========================================================================
 function processMonthMetrics(grid_subset, classified_img) {
   var native_proj = classified_img.projection();
+  // Masked binary for BGR and LPI (Targeting class 3)
   var binary = classified_img.eq(3).selfMask(); 
-  var obstacles = classified_img.neq(3).selfMask(); 
   
   return grid_subset.map(function(ft){
     
-    // --- BGR Calculation --- 
+    // --- 1. BGR Calculation --- 
     var v_area_image = binary.multiply(ee.Image.pixelArea());
     var v_area_ft = ft.area(0.05);
     var v_area = v_area_image.reduceRegion({
@@ -221,7 +224,7 @@ function processMonthMetrics(grid_subset, classified_img) {
     }).get('classification');
     var v_pct_area = ee.Number(v_area).divide(v_area_ft).multiply(100);
 
-    // --- LPI Calculation --- 
+    // --- 2. LPI Calculation --- 
     var patch_vectors = binary.reduceToVectors({
       reducer: ee.Reducer.countEvery(),
       geometry: ft.geometry(),
@@ -245,30 +248,41 @@ function processMonthMetrics(grid_subset, classified_img) {
       0
     );
 
-    // --- MFT Calculation --- 
-    function Get_Mean_Fetch(obstacle_mask, bare_mask, v_points) {
-      var v_distance = obstacle_mask.fastDistanceTransform().sqrt().multiply(ee.Image.pixelArea().sqrt()).rename("distance");
-      var fetch_on_bare = v_distance.updateMask(bare_mask); 
-      v_points = fetch_on_bare.reduceRegions({
-        collection: v_points,
+    // --- 3. MFT Calculation (1000 Random Points) --- 
+    function Get_Mean_Fetch(c_image, geom) {
+      // Create a mask where bare ground = 1, obstacles = 0
+      // fastDistanceTransform computes distance to the nearest 0 (the obstacles!)
+      var bare_ground = c_image.eq(3);
+      
+      var v_distance = bare_ground.fastDistanceTransform().sqrt()
+        .multiply(0.05) // Convert 5cm pixels to meters
+        .rename("distance");
+
+      // Generate 1000 random points within the feature's geometry
+      var N_PTS = 1000;
+      var v_rnd = ee.FeatureCollection.randomPoints(geom, N_PTS, 1234, 0.05);
+      
+      // Sample the distance raster. Points landing on obstacles (0) will read 0.
+      var sampled_points = v_distance.unmask(0).reduceRegions({
+        collection: v_rnd,
         reducer: ee.Reducer.first().setOutputs(["distance"]),
         scale: 0.05
       });
 
-      var valid_points = v_points.filter(ee.Filter.notNull(['distance']));
-      var raw_mean = valid_points.reduceColumns(ee.Reducer.mean(),['distance']).get('mean');
-      var final_mean = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_mean, null), 0, raw_mean);
+      // Filter nulls and calculate the sum
+      var valid_points = sampled_points.filter(ee.Filter.notNull(['distance']));
+      var raw_sum = valid_points.reduceColumns(ee.Reducer.sum(), ['distance']).get('sum');
+      var safe_sum = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_sum, null), 0, raw_sum);
       
-      return ee.Number(final_mean);
-    } 
+      // Divide sum by 1000 to get the Mean Fetch
+      return ee.Number(safe_sum).divide(N_PTS);
+    }
     
-    var N_PTS = 1000;
-    var v_rnd = ee.FeatureCollection.randomPoints(ft.geometry(), N_PTS, 1234, 0.05);
-    var v_nearestMeanValues = Get_Mean_Fetch(obstacles, binary, v_rnd);
+    var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
-    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_nearestMeanValues);
+    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_mft);
   }); 
-} 
+}
 
 var final_may = processMonthMetrics(may_s2_utm, v_classified_may); 
 var final_sep = processMonthMetrics(sep_s2_utm, v_classified_sep); 
