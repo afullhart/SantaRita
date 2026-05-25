@@ -172,7 +172,7 @@ function runCV(targetProp) {
   });
 }
 
-print('--- UNIFIED K-FOLDS RMSE (STRATIFIED TESTING ERROR) ---');
+print('--- K-FOLDS RMSE (STRATIFIED TESTING ERROR) ---');
 var cv_bgr = runCV('BGR');
 print('BGR RMSE -> May:', cv_bgr.get('May_Median'), '| Sept:', cv_bgr.get('Sept_Median'));
 var cv_lpi = runCV('LPI');
@@ -215,15 +215,12 @@ function getStratifiedTrainingRMSE(trainedModel, dataset, targetProp, monthFilte
   return ee.Number(mse).sqrt();
 }
 
-print('--- UNIFIED FITTED MODEL RMSE (STRATIFIED TRAINING ERROR) ---');
+print('--- FITTED MODEL RMSE (STRATIFIED TRAINING ERROR) ---');
 print('Fitted BGR RMSE -> May:', getStratifiedTrainingRMSE(model_bgr, fc, 'BGR', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_bgr, fc, 'BGR', 'Sept'));
 print('Fitted LPI RMSE -> May:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'Sept'));
 print('Fitted MFT RMSE -> May:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'Sept'));
-print('-------------------------------------------------------');
+print('-----------------------------------------------------');
 
-// =========================================================================
-// SEASON-AWARE EXPORT (MATCHES CONSOLE EXACTLY)
-// =========================================================================
 var fc_may = fc.filter(ee.Filter.eq('Month', 'May'));
 var fc_sep = fc.filter(ee.Filter.eq('Month', 'Sept'));
 
@@ -287,7 +284,7 @@ makeScatterChart(export_csv, 'True_MFT', 'Predicted_MFT', 'Mean Fetch (MFT m)', 
 // =========================================================================
 Export.table.toDrive({
   collection: export_csv,
-  description: 'SRER_Metrics_True_vs_Predicted_Unified_Fixed',
+  description: 'SRER_Metrics_True_vs_Predicted',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
