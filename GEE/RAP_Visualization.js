@@ -33,15 +33,16 @@ var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', '
 var training_fc = fc.filter(ee.Filter.notNull(inputProps));
 
 // --- Hyperparameters ---
-var goldilocks_params = {
-  numberOfTrees: 300, 
-  shrinkage: 0.05, 
-  samplingRate: 0.5, 
-  maxNodes: 24, 
+var hyperpars = {
+  numberOfTrees: 400,
+  shrinkage: 0.05,
+  samplingRate: 0.7,
+  maxNodes: 32,
+  loss: 'Huber',
   seed: 123
 };
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION')
   .train({features: training_fc, classProperty: 'BGR', inputProperties: inputProps});
 
