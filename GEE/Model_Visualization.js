@@ -9,7 +9,7 @@ var bounds_geom = bounds_fc.first().geometry().bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING & HILLSHADE VISUALS
 // =========================================================================
-// Load your newly exported, pre-calculated 10m resampled DEM asset instead of the catalog
+// Load your exported, pre-calculated 10m resampled DEM asset instead of the catalog
 var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled'); 
 
 // Compute hillshade and terrain parameters instantly without on-the-fly aggregation math
@@ -29,19 +29,20 @@ var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', '
 var training_fc = fc.filter(ee.Filter.notNull(inputProps));
 
 // --- Hyperparameters ---
-var goldilocks_params = {
-  numberOfTrees: 300,
+var hyperpars = {
+  numberOfTrees: 400,
   shrinkage: 0.05,
-  samplingRate: 0.5,
-  maxNodes: 24,
+  samplingRate: 0.7,
+  maxNodes: 32,
+  loss: 'Huber',
   seed: 123
 };
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'BGR', inputProperties: inputProps});
-var model_lpi = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'LPI', inputProperties: inputProps});
-var model_mft = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // =========================================================================
