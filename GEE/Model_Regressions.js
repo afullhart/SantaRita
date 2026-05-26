@@ -115,18 +115,18 @@ var k_folds = 5;
 var v_list_seeds = ee.List([123, 456, 789, 111, 333]);
 var fold_list = ee.List.sequence(0, 4);
 
+var hyperpars = {
+  numberOfTrees: 400,
+  shrinkage: 0.05,  
+  samplingRate: 0.7,
+  maxNodes: 32, 
+  loss: 'Huber',
+  seed: null
+};
+
 var fc_folds = fc.randomColumn('random', 123).map(function(ft) {
   return ft.set('fold', ee.Number(ft.get('random')).multiply(k_folds).floor());
 });
-
-// Hyperparameters
-var goldilocks_params = {
-  numberOfTrees: 300, 
-  shrinkage: 0.05,       // Lower learning rate
-  samplingRate: 0.5,     // More randomness (fights overfitting)
-  maxNodes: 24,          // Shallower trees (prevents memorization)
-  seed: null
-};
 
 function runCV(targetProp) {
   var fold_metrics = fold_list.map(function(fold) {
@@ -137,10 +137,11 @@ function runCV(targetProp) {
     var test_fc = fc_folds.filter(ee.Filter.eq('fold', i));
     
     var gtb = ee.Classifier.smileGradientTreeBoost({
-      numberOfTrees: goldilocks_params.numberOfTrees, 
-      shrinkage: goldilocks_params.shrinkage, 
-      samplingRate: goldilocks_params.samplingRate, 
-      maxNodes: goldilocks_params.maxNodes, 
+      numberOfTrees: hyperpars.numberOfTrees, 
+      shrinkage: hyperpars.shrinkage, 
+      samplingRate: hyperpars.samplingRate, 
+      maxNodes: hyperpars.maxNodes, 
+      loss: hyperpars.loss, // Added Huber loss here
       seed: current_seed
     }).setOutputMode('REGRESSION').train({features: train_fc, classProperty: targetProp, inputProperties: inputProps});
     
@@ -152,9 +153,11 @@ function runCV(targetProp) {
     });
 
     var may_mse = with_sq_err.filter(ee.Filter.eq('Month', 'May'))
+      .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
       .reduceColumns({reducer: ee.Reducer.mean(), selectors: ['sq_diff']}).get('mean');
       
     var sep_mse = with_sq_err.filter(ee.Filter.eq('Month', 'Sept'))
+      .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
       .reduceColumns({reducer: ee.Reducer.mean(), selectors: ['sq_diff']}).get('mean');
     
     return ee.Dictionary({
@@ -185,14 +188,14 @@ print('-------------------------------------------------------');
 // FINAL MODEL TRAINING
 // =========================================================================
 
-// Train the final export models using the Goldilocks parameters
-goldilocks_params.seed = 123; // Set seed for reproducibility on final export
+// Train the final export models using the updated hyperparameters
+hyperpars.seed = 123; // Set seed for reproducibility on final export
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'BGR', inputProperties: inputProps});
-var model_lpi = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
-var model_mft = ee.Classifier.smileGradientTreeBoost(goldilocks_params)
+var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
 
 // -------------------------------------------------------------------------
@@ -207,7 +210,9 @@ function getStratifiedTrainingRMSE(trainedModel, dataset, targetProp, monthFilte
   var mse = classified.map(function(ft) {
     var diff = ee.Number(ft.get('predicted')).subtract(ee.Number(ft.get(targetProp)));
     return ft.set('sq_diff', diff.multiply(diff));
-  }).reduceColumns({
+  })
+  .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
+  .reduceColumns({
     reducer: ee.Reducer.mean(),
     selectors: ['sq_diff']
   }).get('mean');
@@ -284,7 +289,7 @@ makeScatterChart(export_csv, 'True_MFT', 'Predicted_MFT', 'Mean Fetch (MFT m)', 
 // =========================================================================
 Export.table.toDrive({
   collection: export_csv,
-  description: 'SRER_Metrics_True_vs_Predicted',
+  description: 'SRER_Metrics_True_vs_Predicted_GTB_Huber',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
