@@ -251,30 +251,35 @@ function processMonthMetrics(grid_subset, classified_img) {
       // This converts all NoData edges into solid "obstacles", matching ArcPy's behavior
       // and preventing the 38m runaway distance transform in incomplete September boundaries.
       var solid_img = c_image.unmask(99);
-      var bare_ground = solid_img.eq(3);
       
-      var v_distance = bare_ground.fastDistanceTransform().sqrt()
-        .multiply(0.05) // Convert 5cm pixels to meters
+      // THE LOGIC FIX: Mean Fetch is the distance TO an obstacle. 
+      // fastDistanceTransform targets '1's. So Obstacles MUST be 1. Bare ground is 0.
+      var obstacles = solid_img.neq(3); 
+
+      // Calculate pixel distance to nearest obstacle (1), then multiply by 0.05m
+      var v_distance = obstacles.fastDistanceTransform(2048).sqrt()
+        .multiply(0.05) 
         .rename("distance");
 
-      // Generate 1000 random points within the feature's geometry
+      // Generate 1000 random points strictly within the cell geometry
       var N_PTS = 1000;
-      var v_rnd = ee.FeatureCollection.randomPoints(geom, N_PTS, 1234, 0.05);
-      
-      // Sample the distance raster. Points landing on obstacles (0) will read 0.
-      var sampled_points = v_distance.unmask(0).reduceRegions({
+      var v_rnd = ee.FeatureCollection.randomPoints({
+        region: geom, 
+        points: N_PTS, 
+        seed: 1234
+      });
+
+      // Sample the natively metric distance surface
+      var sampled_points = v_distance.reduceRegions({
         collection: v_rnd,
         reducer: ee.Reducer.first().setOutputs(["distance"]),
         scale: 0.05
       });
 
-      // Filter nulls and calculate the sum
+      // THE MATH FIX: Filter out nulls and use Earth Engine's native mean aggregator
       var valid_points = sampled_points.filter(ee.Filter.notNull(['distance']));
-      var raw_sum = valid_points.reduceColumns(ee.Reducer.sum(), ['distance']).get('sum');
-      var safe_sum = ee.Algorithms.If(ee.Algorithms.IsEqual(raw_sum, null), 0, raw_sum);
       
-      // Divide sum by 1000 to get the Mean Fetch
-      return ee.Number(safe_sum).divide(N_PTS);
+      return ee.Number(valid_points.aggregate_mean('distance'));
     } 
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
