@@ -20,10 +20,10 @@ cell_size = float(arcpy.management.GetRasterProperties(may_tiff, 'CELLSIZEX').ge
 
 # Helper function to extract gap lengths
 def get_gap_lengths(transect_array, gap_val, p_size):
-  padded = np.concatenate(([False], (transect_array == gap_val), [False]))
-  diffs = np.diff(padded.astype(int))
-  starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
-  return (ends - starts) * p_size
+    padded = np.concatenate(([False], (transect_array == gap_val), [False]))
+    diffs = np.diff(padded.astype(int))
+    starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
+    return (ends - starts) * p_size
 
 # ====================================================================
 # DATABASE PREPARATION & TEMPORAL DUPLICATION
@@ -33,45 +33,46 @@ print('Preparing feature class schema and duplicating geometries for temporal an
 # 1. Add Month Field
 existing_fields = [f.name for f in arcpy.ListFields(input_plots)]
 if 'Month' not in existing_fields:
-  arcpy.management.AddField(input_plots, 'Month', 'TEXT', field_length=15)
+    arcpy.management.AddField(input_plots, 'Month', 'TEXT', field_length=15)
 
-# 2. Add Metric Fields (Added 50cm and 100cm LPI BGR fields)
+# 2. Add Metric Fields
 new_fields = [
-  ('Exact_BGR_Pct', 'DOUBLE'), ('Exact_LPI_Pct', 'DOUBLE'), ('Exact_Fetch_m', 'DOUBLE'),
-  ('Exhaust_Gap_0_24', 'DOUBLE'), ('Exhaust_Gap_25_50', 'DOUBLE'), ('Exhaust_Gap_51_100', 'DOUBLE'),
-  ('Exhaust_Gap_101_200', 'DOUBLE'), ('Exhaust_Gap_gt_200', 'DOUBLE'), ('Exhaust_Total_Gap', 'DOUBLE'),
-  ('NRI_BGR_Pct', 'DOUBLE'), ('NRI_BGR_50cm_Pct', 'DOUBLE'), ('NRI_BGR_100cm_Pct', 'DOUBLE'),
-  ('NRI_Gap_0_24', 'DOUBLE'), ('NRI_Gap_25_50', 'DOUBLE'),
-  ('NRI_Gap_51_100', 'DOUBLE'), ('NRI_Gap_101_200', 'DOUBLE'), ('NRI_Gap_gt_200', 'DOUBLE'),
-  ('NRI_Total_Gap', 'DOUBLE')
+    ('Exact_BGR_Pct', 'DOUBLE'), ('Exact_LPI_Pct', 'DOUBLE'), ('Exact_Fetch_m', 'DOUBLE'),
+    ('Exhaust_Gap_0_24', 'DOUBLE'), ('Exhaust_Gap_25_50', 'DOUBLE'), ('Exhaust_Gap_51_100', 'DOUBLE'),
+    ('Exhaust_Gap_101_200', 'DOUBLE'), ('Exhaust_Gap_gt_200', 'DOUBLE'), ('Exhaust_Total_Gap', 'DOUBLE'),
+    ('NRI_BGR_Pct', 'DOUBLE'), ('NRI_BGR_50cm_Pct', 'DOUBLE'), ('NRI_BGR_100cm_Pct', 'DOUBLE'),
+    ('NRI_Fetch_50cm', 'DOUBLE'), ('NRI_Fetch_100cm', 'DOUBLE'),
+    ('NRI_Gap_0_24', 'DOUBLE'), ('NRI_Gap_25_50', 'DOUBLE'),
+    ('NRI_Gap_51_100', 'DOUBLE'), ('NRI_Gap_101_200', 'DOUBLE'), ('NRI_Gap_gt_200', 'DOUBLE'),
+    ('NRI_Total_Gap', 'DOUBLE')
 ]
 
 for field_name, field_type in new_fields:
-  if field_name not in existing_fields:
-    arcpy.management.AddField(input_plots, field_name, field_type)
+    if field_name not in existing_fields:
+        arcpy.management.AddField(input_plots, field_name, field_type)
 
 # 3. Duplicate Rows for May & September
 may_count, sep_count = 0, 0
 with arcpy.da.SearchCursor(input_plots, ['Month']) as cursor:
-  for row in cursor:
-    if row[0] == 'May_2019': may_count += 1
-    if row[0] == 'Sep_2019': sep_count += 1
+    for row in cursor:
+        if row[0] == 'May_2019': may_count += 1
+        if row[0] == 'Sep_2019': sep_count += 1
 
 if may_count == 0 and sep_count == 0:
-  print('  -> First run detected. Generating temporal pairs...')
-  sept_shapes = []
-  
-  with arcpy.da.UpdateCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
-    for row in cursor:
-      row[1] = 'May_2019'
-      sept_shapes.append(row[0])
-      cursor.updateRow(row)
-      
-  with arcpy.da.InsertCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
-    for shape in sept_shapes:
-      cursor.insertRow([shape, 'Sep_2019'])
+    print('  -> First run detected. Generating temporal pairs...')
+    sept_shapes = []
+    
+    with arcpy.da.UpdateCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
+        for row in cursor:
+            row[1] = 'May_2019'
+            sept_shapes.append(row[0])
+            cursor.updateRow(row)
+            
+    with arcpy.da.InsertCursor(input_plots, ['SHAPE@', 'Month']) as cursor:
+        for shape in sept_shapes:
+            cursor.insertRow([shape, 'Sep_2019'])
 else:
-  print('  -> Temporal pairs already exist. Proceeding to extraction...')
+    print('  -> Temporal pairs already exist. Proceeding to extraction...')
 
 cursor_fields = ['SHAPE@', 'Month'] + [f[0] for f in new_fields]
 total_plots = int(arcpy.management.GetCount(input_plots).getOutput(0))
@@ -82,157 +83,176 @@ total_plots = int(arcpy.management.GetCount(input_plots).getOutput(0))
 print(f'\nStarting metric extraction for all {total_plots} temporal plots...')
 
 with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
-  for i, row in enumerate(cursor):
-    plot_geom = row[0]
-    month_val = row[1]
-    
-    active_tiff = may_tiff if month_val == 'May_2019' else sep_tiff
-    print(f'  -> Processing Plot {i + 1} of {total_plots} [{month_val}]...')
-    
-    arcpy.env.snapRaster = active_tiff
-    arcpy.env.cellSize = active_tiff
-    
-    temp_mask = f'memory\\mask_{i}'
-    arcpy.management.CopyFeatures([plot_geom], temp_mask)
-
-    try:
-      # EXTRACT EXACT PIXELS
-      masked_raster = ExtractByMask(active_tiff, temp_mask)
-      main_array = arcpy.RasterToNumPyArray(masked_raster, nodata_to_value=-9999)
-      
-      valid_mask = main_array != -9999
-      total_valid_pixels = np.sum(valid_mask)
-      
-      if total_valid_pixels == 0:
-        print(f'     [Warning] Plot {i + 1} contains no valid raster data. Skipping.')
-        continue
-
-      # ==============================================================
-      # SUITE 1: EXACT 2D METRICS
-      # ==============================================================
-      bare_ground_pixels = np.sum(main_array[valid_mask] == target_value)
-      exact_bgr = (float(bare_ground_pixels) / float(total_valid_pixels)) * 100
-
-      isolated_class = Con((masked_raster == target_value), 1)
-      grouped_patches = RegionGroup(isolated_class, 'EIGHT', 'WITHIN', 'NO_LINK')
-      patch_array = arcpy.RasterToNumPyArray(grouped_patches, nodata_to_value=0)
-      
-      patch_ids, counts = np.unique(patch_array, return_counts=True)
-      valid_patch_mask = patch_ids > 0 
-      max_patch_pixels = np.max(counts[valid_patch_mask]) if np.any(valid_patch_mask) else 0
-      exact_lpi = (float(max_patch_pixels) / float(total_valid_pixels)) * 100
-
-      obstacle_class = Con((masked_raster != target_value) & (~IsNull(masked_raster)), 1)
-      fetch_dist_raster = EucDistance(obstacle_class)
-      fetch_bare_only = Con(masked_raster == target_value, ExtractByMask(fetch_dist_raster, temp_mask))
-      
-      fetch_array = arcpy.RasterToNumPyArray(fetch_bare_only, nodata_to_value=-9999)
-      valid_fetch = fetch_array[fetch_array >= 0]
-      exact_fetch = np.mean(valid_fetch) if valid_fetch.size > 0 else 0.0
-
-      # ==============================================================
-      # SUITE 2: EXHAUSTIVE VIRTUAL TRANSECTS (ALL ROWS/COLS)
-      # ==============================================================
-      exhaust_gap_arrays = []
-      for r in range(main_array.shape[0]):
-        exhaust_gap_arrays.append(get_gap_lengths(main_array[r, :], target_value, cell_size))
-      for c in range(main_array.shape[1]):
-        exhaust_gap_arrays.append(get_gap_lengths(main_array[:, c], target_value, cell_size))
-          
-      all_exhaust_gaps = np.concatenate(exhaust_gap_arrays)
-      total_exhaust_length_m = total_valid_pixels * cell_size * 2
-      
-      ex_0_24 = (np.sum(all_exhaust_gaps[all_exhaust_gaps < 0.25]) / total_exhaust_length_m) * 100
-      ex_25_50 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.25) & (all_exhaust_gaps <= 0.50)]) / total_exhaust_length_m) * 100
-      ex_51_100 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.51) & (all_exhaust_gaps <= 1.00)]) / total_exhaust_length_m) * 100
-      ex_101_200 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 1.01) & (all_exhaust_gaps <= 2.00)]) / total_exhaust_length_m) * 100
-      ex_gt_200 = (np.sum(all_exhaust_gaps[all_exhaust_gaps > 2.00]) / total_exhaust_length_m) * 100
-      ex_total = ex_0_24 + ex_25_50 + ex_51_100 + ex_101_200 + ex_gt_200
-
-      # ==============================================================
-      # SUITE 3: SYNTHETIC NRI 1D METRICS (3 SPOKES)
-      # ==============================================================
-      cx, cy = plot_geom.centroid.X, plot_geom.centroid.Y
-      xmin, ymax = masked_raster.extent.XMin, masked_raster.extent.YMax
-      
-      transect_length_m = 50.0
-      start_buffer_m = 5.0
-      distances = np.linspace(start_buffer_m, start_buffer_m + transect_length_m, int(transect_length_m / cell_size))
-      
-      all_nri_transects = []
-      
-      # Tracking bins for standard, 50cm, and 100cm intervals
-      spoke_bgr_pixels = 0
-      spoke_bgr_pixels_50cm = 0
-      spoke_bgr_pixels_100cm = 0
-      
-      total_pins_50cm = 0
-      total_pins_100cm = 0
-      
-      for az in [0, 120, 240]:
-        az_rad = np.radians(az)
-        dx = distances * np.sin(az_rad)
-        dy = distances * np.cos(az_rad)
+    for i, row in enumerate(cursor):
+        plot_geom = row[0]
+        month_val = row[1]
         
-        cols = np.round(((cx + dx) - xmin) / cell_size).astype(int)
-        rows = np.round((ymax - (cy + dy)) / cell_size).astype(int)
+        active_tiff = may_tiff if month_val == 'May_2019' else sep_tiff
+        print(f'  -> Processing Plot {i + 1} of {total_plots} [{month_val}]...')
         
-        rows = np.clip(rows, 0, main_array.shape[0] - 1)
-        cols = np.clip(cols, 0, main_array.shape[1] - 1)
-        
-        transect_values = main_array[rows, cols]
-        all_nri_transects.append(transect_values)
-        
-        # Standard 5cm continuous measurement
-        spoke_bgr_pixels += np.sum(transect_values == target_value)
-        
-        # 50cm Interval Measurement (every 10th pixel)
-        vals_50cm = transect_values[::10]
-        spoke_bgr_pixels_50cm += np.sum(vals_50cm == target_value)
-        total_pins_50cm += len(vals_50cm)
-        
-        # 100cm Interval Measurement (every 20th pixel)
-        vals_100cm = transect_values[::20]
-        spoke_bgr_pixels_100cm += np.sum(vals_100cm == target_value)
-        total_pins_100cm += len(vals_100cm)
-      
-      # Calculate percentages across intervals
-      nri_bgr = (float(spoke_bgr_pixels) / (len(distances) * 3)) * 100
-      nri_bgr_50cm = (float(spoke_bgr_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
-      nri_bgr_100cm = (float(spoke_bgr_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
-      
-      total_nri_length_m = 3 * transect_length_m
+        arcpy.env.snapRaster = active_tiff
+        arcpy.env.cellSize = active_tiff
 
-      all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
-      
-      nri_0_24 = (np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100
-      nri_25_50 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100
-      nri_51_100 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / total_nri_length_m) * 100
-      nri_101_200 = (np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / total_nri_length_m) * 100
-      nri_gt_200 = (np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100
-      nri_total = nri_0_24 + nri_25_50 + nri_51_100 + nri_101_200 + nri_gt_200
+        try:
+            # EXTRACT EXACT PIXELS 
+            masked_raster = ExtractByMask(active_tiff, plot_geom)
+            main_array = arcpy.RasterToNumPyArray(masked_raster, nodata_to_value=-9999)
+            
+            valid_mask = main_array != -9999
+            total_valid_pixels = np.sum(valid_mask)
+            
+            if total_valid_pixels == 0:
+                print(f'     [Warning] Plot {i + 1} contains no valid raster data. Skipping.')
+                continue
 
-      # ==============================================================
-      # WRITE DATA BACK TO ROW
-      # ==============================================================
-      row[2] = exact_bgr; row[3] = exact_lpi; row[4] = exact_fetch
-      row[5] = ex_0_24; row[6] = ex_25_50; row[7] = ex_51_100; row[8] = ex_101_200; row[9] = ex_gt_200; row[10] = ex_total
-      
-      # Adjusted layout for the three BGR metrics followed by the Gap Fractions
-      row[11] = nri_bgr
-      row[12] = nri_bgr_50cm
-      row[13] = nri_bgr_100cm
-      
-      row[14] = nri_0_24; row[15] = nri_25_50; row[16] = nri_51_100; row[17] = nri_101_200; row[18] = nri_gt_200; row[19] = nri_total
-      
-      cursor.updateRow(row)
+            # ==============================================================
+            # SUITE 1: EXACT 2D METRICS
+            # ==============================================================
+            bare_ground_pixels = np.sum(main_array[valid_mask] == target_value)
+            exact_bgr = (float(bare_ground_pixels) / float(total_valid_pixels)) * 100
 
-    except Exception as e:
-      print(f'     [Error] Failed on Plot {i + 1}: {e}')
-    
-    finally:
-      # Nuke the entire memory workspace to guarantee zero bleed
-      arcpy.management.Delete('memory')
+            isolated_class = Con((masked_raster == target_value), 1)
+            grouped_patches = RegionGroup(isolated_class, 'EIGHT', 'WITHIN', 'NO_LINK')
+            patch_array = arcpy.RasterToNumPyArray(grouped_patches, nodata_to_value=0)
+            
+            patch_ids, counts = np.unique(patch_array, return_counts=True)
+            valid_patch_mask = patch_ids > 0 
+            max_patch_pixels = np.max(counts[valid_patch_mask]) if np.any(valid_patch_mask) else 0
+            exact_lpi = (float(max_patch_pixels) / float(total_valid_pixels)) * 100
+
+            # Calculate Distance from Vegetation (Obstacles)
+            obstacle_class = Con((masked_raster != target_value) & (~IsNull(masked_raster)), 1)
+            fetch_dist_raster = EucDistance(obstacle_class)
+            
+            # EXACT FETCH (Modified to include ALL valid pixels, including 0s on vegetation)
+            full_fetch_array = arcpy.RasterToNumPyArray(ExtractByMask(fetch_dist_raster, plot_geom), nodata_to_value=-9999)
+            valid_full_fetch = full_fetch_array[full_fetch_array >= 0]
+            exact_fetch = np.mean(valid_full_fetch) if valid_full_fetch.size > 0 else 0.0
+
+            # ==============================================================
+            # SUITE 2: EXHAUSTIVE VIRTUAL TRANSECTS (ALL ROWS/COLS)
+            # ==============================================================
+            exhaust_gap_arrays = []
+            for r in range(main_array.shape[0]):
+                exhaust_gap_arrays.append(get_gap_lengths(main_array[r, :], target_value, cell_size))
+            for c in range(main_array.shape[1]):
+                exhaust_gap_arrays.append(get_gap_lengths(main_array[:, c], target_value, cell_size))
+                  
+            all_exhaust_gaps = np.concatenate(exhaust_gap_arrays)
+            total_exhaust_length_m = total_valid_pixels * cell_size * 2
+            
+            ex_0_24 = (np.sum(all_exhaust_gaps[all_exhaust_gaps < 0.25]) / total_exhaust_length_m) * 100
+            ex_25_50 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.25) & (all_exhaust_gaps <= 0.50)]) / total_exhaust_length_m) * 100
+            ex_51_100 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.51) & (all_exhaust_gaps <= 1.00)]) / total_exhaust_length_m) * 100
+            ex_101_200 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 1.01) & (all_exhaust_gaps <= 2.00)]) / total_exhaust_length_m) * 100
+            ex_gt_200 = (np.sum(all_exhaust_gaps[all_exhaust_gaps > 2.00]) / total_exhaust_length_m) * 100
+            ex_total = ex_0_24 + ex_25_50 + ex_51_100 + ex_101_200 + ex_gt_200
+
+            # ==============================================================
+            # SUITE 3: SYNTHETIC NRI 1D METRICS (3 SPOKES)
+            # ==============================================================
+            cx, cy = plot_geom.centroid.X, plot_geom.centroid.Y
+            xmin, ymax = masked_raster.extent.XMin, masked_raster.extent.YMax
+            
+            transect_length_m = 50.0
+            start_buffer_m = 5.0
+            distances = np.linspace(start_buffer_m, start_buffer_m + transect_length_m, int(transect_length_m / cell_size))
+            
+            all_nri_transects = []
+            all_fetch_50cm = []
+            all_fetch_100cm = []
+            
+            spoke_bgr_pixels = 0
+            spoke_bgr_pixels_50cm = 0
+            spoke_bgr_pixels_100cm = 0
+            
+            total_pins_50cm = 0
+            total_pins_100cm = 0
+            
+            for az in [0, 120, 240]:
+                az_rad = np.radians(az)
+                dx = distances * np.sin(az_rad)
+                dy = distances * np.cos(az_rad)
+                
+                cols = np.round(((cx + dx) - xmin) / cell_size).astype(int)
+                rows = np.round((ymax - (cy + dy)) / cell_size).astype(int)
+                
+                rows = np.clip(rows, 0, main_array.shape[0] - 1)
+                cols = np.clip(cols, 0, main_array.shape[1] - 1)
+                
+                transect_values = main_array[rows, cols]
+                all_nri_transects.append(transect_values)
+                
+                # Grab the fetch distances directly along the transect lines
+                fetch_transect_values = full_fetch_array[rows, cols]
+                
+                spoke_bgr_pixels += np.sum(transect_values == target_value)
+                
+                # 50cm Interval Measurement
+                vals_50cm = transect_values[::10]
+                spoke_bgr_pixels_50cm += np.sum(vals_50cm == target_value)
+                total_pins_50cm += len(vals_50cm)
+                
+                # 100cm Interval Measurement
+                vals_100cm = transect_values[::20]
+                spoke_bgr_pixels_100cm += np.sum(vals_100cm == target_value)
+                total_pins_100cm += len(vals_100cm)
+                
+                # INTERVAL FETCH (Modified to append all points, including zeros)
+                all_fetch_50cm.extend(fetch_transect_values[::10])
+                all_fetch_100cm.extend(fetch_transect_values[::20])
+            
+            # --- Calculate 1D BGR percentages ---
+            nri_bgr = (float(spoke_bgr_pixels) / (len(distances) * 3)) * 100
+            nri_bgr_50cm = (float(spoke_bgr_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
+            nri_bgr_100cm = (float(spoke_bgr_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
+            
+            # --- Calculate 1D Interval Fetch ---
+            f50_valid = np.array(all_fetch_50cm)
+            f50_valid = f50_valid[f50_valid >= 0] # Filter out NoData ONLY
+            nri_fetch_50cm = float(np.mean(f50_valid)) if f50_valid.size > 0 else 0.0
+            
+            f100_valid = np.array(all_fetch_100cm)
+            f100_valid = f100_valid[f100_valid >= 0] # Filter out NoData ONLY
+            nri_fetch_100cm = float(np.mean(f100_valid)) if f100_valid.size > 0 else 0.0
+            
+            # --- Calculate Gap Metrics ---
+            total_nri_length_m = 3 * transect_length_m
+            all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
+            
+            nri_0_24 = (np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100
+            nri_25_50 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100
+            nri_51_100 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / total_nri_length_m) * 100
+            nri_101_200 = (np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / total_nri_length_m) * 100
+            nri_gt_200 = (np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100
+            nri_total = nri_0_24 + nri_25_50 + nri_51_100 + nri_101_200 + nri_gt_200
+
+            # ==============================================================
+            # WRITE DATA BACK TO ROW
+            # ==============================================================
+            row[2] = exact_bgr; row[3] = exact_lpi; row[4] = exact_fetch
+            row[5] = ex_0_24; row[6] = ex_25_50; row[7] = ex_51_100; row[8] = ex_101_200; row[9] = ex_gt_200; row[10] = ex_total
+            
+            row[11] = nri_bgr
+            row[12] = nri_bgr_50cm
+            row[13] = nri_bgr_100cm
+            
+            row[14] = nri_fetch_50cm
+            row[15] = nri_fetch_100cm
+            
+            row[16] = nri_0_24; row[17] = nri_25_50; row[18] = nri_51_100; row[19] = nri_101_200; row[20] = nri_gt_200; row[21] = nri_total
+            
+            cursor.updateRow(row)
+
+        except Exception as e:
+            print(f'     [Error] Failed on Plot {i + 1}: {e}')
+        
+        finally:
+            if 'masked_raster' in locals(): arcpy.management.Delete(masked_raster)
+            if 'isolated_class' in locals(): arcpy.management.Delete(isolated_class)
+            if 'grouped_patches' in locals(): arcpy.management.Delete(grouped_patches)
+            if 'obstacle_class' in locals(): arcpy.management.Delete(obstacle_class)
+            if 'fetch_dist_raster' in locals(): arcpy.management.Delete(fetch_dist_raster)
 
 print('\nSuccess! All plot attributes have been updated successfully.')
 arcpy.CheckInExtension('Spatial')
