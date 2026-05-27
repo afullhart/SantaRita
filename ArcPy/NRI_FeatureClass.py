@@ -8,6 +8,7 @@ from arcpy.sa import *
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 input_plots = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_NRI_Plots'
+csv_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1'
 
 target_value = 3  # Class value for Bare Ground / Canopy Gap
 
@@ -255,4 +256,9 @@ with arcpy.da.UpdateCursor(input_plots, cursor_fields) as cursor:
       if 'fetch_dist_raster' in locals(): arcpy.management.Delete(fetch_dist_raster)
 
 print('\nSuccess! All plot attributes have been updated successfully.')
+
+arcpy.conversion.TableToTable(input_plots, csv_folder, 'SRER_NRI_Plots.csv')
+print("Export complete!")
+
 arcpy.CheckInExtension('Spatial')
+
