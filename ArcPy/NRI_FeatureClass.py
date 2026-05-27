@@ -7,7 +7,7 @@ from arcpy.sa import *
 # ====================================================================
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
-input_plots = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_NRI_Plots_Greedy_Strict'
+input_plots = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_NRI_Plots'
 
 target_value = 3  # Class value for Bare Ground / Canopy Gap
 
