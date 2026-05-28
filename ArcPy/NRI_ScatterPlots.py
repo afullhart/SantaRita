@@ -13,22 +13,21 @@ df = pd.read_csv(r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_
 
 # Define the pairs of columns to plot
 pairs = [
-  ('Exact_BGR_Pct', 'NRI_BGR_Pct'),
+  ('Exact_BGR_Pct', 'NRI_BGR_0cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_50cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_100cm_Pct'),
   ('Exact_Fetch_m', 'NRI_Fetch_50cm'),
   ('Exact_Fetch_m', 'NRI_Fetch_100cm'),
-  ('Exhaust_Gap_0_24', 'NRI_Gap_0_24'),
-  ('Exhaust_Gap_25_50', 'NRI_Gap_25_50'),
-  ('Exhaust_Gap_51_100', 'NRI_Gap_51_100'),
-  ('Exhaust_Gap_101_200', 'NRI_Gap_101_200'),
-  ('Exhaust_Gap_gt_200', 'NRI_Gap_gt_200'),
-  ('Exact_BGR_Pct', 'Exact_LPI_Pct'),
-  ('Exhaust_Gap_0_24', 'Exact_LPI_Pct'),
-  ('Exhaust_Gap_25_50', 'Exact_LPI_Pct'),
-  ('Exhaust_Gap_51_100', 'Exact_LPI_Pct'),
-  ('Exhaust_Gap_101_200', 'Exact_LPI_Pct'),
-  ('Exhaust_Gap_gt_200', 'Exact_LPI_Pct')
+  ('Exact_Gap_0_24', 'NRI_Gap_0_24'),
+  ('Exact_Gap_25_50', 'NRI_Gap_25_50'),
+  ('Exact_Gap_51_100', 'NRI_Gap_51_100'),
+  ('Exact_Gap_101_200', 'NRI_Gap_101_200'),
+  ('Exact_Gap_gt_200', 'NRI_Gap_gt_200'),
+  ('Exact_Gap_0_24', 'Exact_LPI_Pct'),
+  ('Exact_Gap_25_50', 'Exact_LPI_Pct'),
+  ('Exact_Gap_51_100', 'Exact_LPI_Pct'),
+  ('Exact_Gap_101_200', 'Exact_LPI_Pct'),
+  ('Exact_Gap_gt_200', 'Exact_LPI_Pct')
 ]
 
 for i, (x_col, y_col) in enumerate(pairs):
