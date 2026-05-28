@@ -6,7 +6,7 @@ from sklearn.metrics import r2_score
 
 # 1. Load and sort the data
 # Make sure 'ok.csv' is in your current working directory
-df = pd.read_csv(r'C:\Users\andre\Desktop\data.csv')
+df = pd.read_csv(r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots.csv")
 df = df.sort_values(by='Exact_BGR_Pct')
 
 x = df['Exact_BGR_Pct'].values
