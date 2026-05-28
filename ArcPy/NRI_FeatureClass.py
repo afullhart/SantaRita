@@ -39,9 +39,9 @@ if 'Month' not in existing_fields:
 # 2. Add Metric Fields
 new_fields = [
   ('Exact_BGR_Pct', 'DOUBLE'), ('Exact_LPI_Pct', 'DOUBLE'), ('Exact_Fetch_m', 'DOUBLE'),
-  ('Exhaust_Gap_0_24', 'DOUBLE'), ('Exhaust_Gap_25_50', 'DOUBLE'), ('Exhaust_Gap_51_100', 'DOUBLE'),
-  ('Exhaust_Gap_101_200', 'DOUBLE'), ('Exhaust_Gap_gt_200', 'DOUBLE'), ('Exhaust_Total_Gap', 'DOUBLE'),
-  ('NRI_BGR_Pct', 'DOUBLE'), ('NRI_BGR_50cm_Pct', 'DOUBLE'), ('NRI_BGR_100cm_Pct', 'DOUBLE'),
+  ('Exact_Gap_0_24', 'DOUBLE'), ('Exact_Gap_25_50', 'DOUBLE'), ('Exact_Gap_51_100', 'DOUBLE'),
+  ('Exact_Gap_101_200', 'DOUBLE'), ('Exact_Gap_gt_200', 'DOUBLE'), ('ExactTotal_Gap', 'DOUBLE'),
+  ('NRI_BGR_0cm_Pct', 'DOUBLE'), ('NRI_BGR_50cm_Pct', 'DOUBLE'), ('NRI_BGR_100cm_Pct', 'DOUBLE'),
   ('NRI_Fetch_50cm', 'DOUBLE'), ('NRI_Fetch_100cm', 'DOUBLE'),
   ('NRI_Gap_0_24', 'DOUBLE'), ('NRI_Gap_25_50', 'DOUBLE'),
   ('NRI_Gap_51_100', 'DOUBLE'), ('NRI_Gap_101_200', 'DOUBLE'), ('NRI_Gap_gt_200', 'DOUBLE'),
