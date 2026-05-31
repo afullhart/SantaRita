@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 data_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
+out_folder = r'C:\Users\andre\ScatterPlots'
 
 csv_files = {
   '10m_Grid': 'SRER_Grid_10m_Metrics.csv',
@@ -116,7 +117,7 @@ for scale_name, csv_filename in csv_files.items():
   # Generous padding to prevent overlapping labels
   fig.tight_layout(pad=4.0)  
 
-  output_img_path = os.path.join(data_folder, f'{scale_name}_Convergence.png')
+  output_img_path = os.path.join(out_folder, f'{scale_name}_Convergence.png')
   plt.savefig(output_img_path, dpi=300)
   plt.close() 
   
