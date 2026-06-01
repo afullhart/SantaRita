@@ -33,7 +33,6 @@ def generate_piecewise_plot(data, x_col, y_col, initial_guess):
   print(f"Fitting piecewise regression for {y_col} vs {x_col}...")
   
   # Drop NaNs specifically for the two columns being plotted and sort by X
-  # This is critical for the Herb-to-Woody ratio which contains NaNs
   subset = data[[x_col, y_col]].dropna().sort_values(by=x_col)
   
   if subset.empty:
@@ -45,7 +44,8 @@ def generate_piecewise_plot(data, x_col, y_col, initial_guess):
 
   # Fit the model using scipy's curve_fit
   try:
-    params, covariance = curve_fit(piecewise_linear, x, y, p0=initial_guess)
+    # Maxfev increased to give the optimizer more attempts to converge on tricky distributions
+    params, covariance = curve_fit(piecewise_linear, x, y, p0=initial_guess, maxfev=10000)
   except Exception as e:
     print(f"  -> Optimizer failed to find a fit: {e}")
     return
@@ -96,19 +96,35 @@ def generate_piecewise_plot(data, x_col, y_col, initial_guess):
 print("\n--- Generating Piecewise Regressions ---")
 
 # Plot 1: Exact BGR vs Exact LPI
-# Using the specific initial guess that was previously working for this scale
 guess_lpi = [25.0, 5.0, 0.2, 1.2]
 generate_piecewise_plot(df, 'Exact_BGR_Pct', 'Exact_LPI_Pct', initial_guess=guess_lpi)
 
 # Plot 2: Exact BGR vs Exact Herb-to-Woody Ratio
-# Using a generic baseline guess, dynamically setting y0 to the mean of the valid ratios
 hw_mean = df['Exact_Herb_Woody_Ratio'].mean()
 guess_hw = [25.0, hw_mean, 0.0, 0.0]
 generate_piecewise_plot(df, 'Exact_BGR_Pct', 'Exact_Herb_Woody_Ratio', initial_guess=guess_hw)
 
 # Plot 3: Exact LPI vs Exact Herb-to-Woody Ratio
-# Reusing the mean Herb-to-Woody ratio for the y0 guess
 guess_lpi_hw = [25.0, hw_mean, 0.0, 0.0]
 generate_piecewise_plot(df, 'Exact_LPI_Pct', 'Exact_Herb_Woody_Ratio', initial_guess=guess_lpi_hw)
+
+# Plots 4-8: Exact Canopy Gap Categories vs Exact LPI
+gap_cols = [
+  'Exact_Gap_0_24',
+  'Exact_Gap_25_50',
+  'Exact_Gap_51_100',
+  'Exact_Gap_101_200',
+  'Exact_Gap_gt_200'
+]
+
+lpi_mean = df['Exact_LPI_Pct'].mean()
+
+for gap_col in gap_cols:
+  # Dynamically anchor the breakpoint to the specific mean of the current gap category
+  gap_mean = df[gap_col].mean()
+  guess_gap = [gap_mean, lpi_mean, 0.0, 0.0]
+  
+  # Plotting Gap fraction on X-axis, LPI on Y-axis
+  generate_piecewise_plot(df, gap_col, 'Exact_LPI_Pct', initial_guess=guess_gap)
 
 print(f"\nAll operations complete! Plots are located in: {output_dir}")
