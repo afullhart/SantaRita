@@ -4,15 +4,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
 
-# Define output directory and ensure it exists
-output_dir = r"C:\Users\andre\ScatterPlots"
-os.makedirs(output_dir, exist_ok=True)
+# ====================================================================
+# FOLDER SETUP & ROUTING
+# ====================================================================
+# Define base output directory
+base_dir = r"C:\Users\andre\ScatterPlots"
+
+# Define and create the new subfolders
+exact_dir = os.path.join(base_dir, "Exact_vs_Exact")
+sampled_dir = os.path.join(base_dir, "Exact_vs_Sampled")
+
+os.makedirs(exact_dir, exist_ok=True)
+os.makedirs(sampled_dir, exist_ok=True)
 
 # Read the uploaded CSV
 df = pd.read_csv(r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots.csv")
 
-# Define the pairs of columns to plot
+# ====================================================================
+# PAIR DEFINITIONS
+# ====================================================================
 pairs = [
+  # --- Exact vs Sampled (NRI) Pairs ---
   ('Exact_BGR_Pct', 'NRI_BGR_0cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_50cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_100cm_Pct'),
@@ -26,13 +38,57 @@ pairs = [
   ('Exact_Gap_51_100', 'NRI_Gap_51_100'),
   ('Exact_Gap_101_200', 'NRI_Gap_101_200'),
   ('Exact_Gap_gt_200', 'NRI_Gap_gt_200'),
+  
+  # --- Exact vs Exact Pairs ---
   ('Exact_Gap_0_24', 'Exact_LPI_Pct'),
   ('Exact_Gap_25_50', 'Exact_LPI_Pct'),
   ('Exact_Gap_51_100', 'Exact_LPI_Pct'),
   ('Exact_Gap_101_200', 'Exact_LPI_Pct'),
-  ('Exact_Gap_gt_200', 'Exact_LPI_Pct')
+  ('Exact_Gap_gt_200', 'Exact_LPI_Pct'),
+
+  ('Exact_BGR_Pct', 'Exact_Fetch_m'),
+  ('Exact_BGR_Pct', 'Exact_LPI_Pct'),
+  ('Exact_BGR_Pct', 'Exact_Gap_0_24'),
+  ('Exact_BGR_Pct', 'Exact_Gap_25_50'),
+  ('Exact_BGR_Pct', 'Exact_Gap_51_100'),
+  ('Exact_BGR_Pct', 'Exact_Gap_101_200'),
+  ('Exact_BGR_Pct', 'Exact_Gap_gt_200'),
+  ('Exact_BGR_Pct', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Fetch_m', 'Exact_LPI_Pct'),
+  ('Exact_Fetch_m', 'Exact_Gap_0_24'),
+  ('Exact_Fetch_m', 'Exact_Gap_25_50'),
+  ('Exact_Fetch_m', 'Exact_Gap_51_100'),
+  ('Exact_Fetch_m', 'Exact_Gap_101_200'),
+  ('Exact_Fetch_m', 'Exact_Gap_gt_200'),
+  ('Exact_Fetch_m', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_LPI_Pct', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Gap_0_24', 'Exact_Gap_25_50'),
+  ('Exact_Gap_0_24', 'Exact_Gap_51_100'),
+  ('Exact_Gap_0_24', 'Exact_Gap_101_200'),
+  ('Exact_Gap_0_24', 'Exact_Gap_gt_200'),
+  ('Exact_Gap_0_24', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Gap_25_50', 'Exact_Gap_51_100'),
+  ('Exact_Gap_25_50', 'Exact_Gap_101_200'),
+  ('Exact_Gap_25_50', 'Exact_Gap_gt_200'),
+  ('Exact_Gap_25_50', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Gap_51_100', 'Exact_Gap_101_200'),
+  ('Exact_Gap_51_100', 'Exact_Gap_gt_200'),
+  ('Exact_Gap_51_100', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Gap_101_200', 'Exact_Gap_gt_200'),
+  ('Exact_Gap_101_200', 'Exact_Herb_Woody_Ratio'),
+
+  ('Exact_Gap_gt_200', 'Exact_Herb_Woody_Ratio')
 ]
 
+# ====================================================================
+# PLOTTING LOOP
+# ====================================================================
 for i, (x_col, y_col) in enumerate(pairs):
   plt.figure(figsize=(8, 6))
   
@@ -91,10 +147,18 @@ for i, (x_col, y_col) in enumerate(pairs):
   plt.legend(loc='lower right')
   plt.tight_layout()
   
-  # Save the file to the new folder
+  # ROUTING LOGIC: Determine which folder to save the plot in
+  if 'NRI_' in x_col or 'NRI_' in y_col:
+    target_dir = sampled_dir
+  else:
+    target_dir = exact_dir
+
+  # Save the file to the chosen folder
   filename = f'{x_col}_vs_{y_col}.png'
-  filepath = os.path.join(output_dir, filename)
+  filepath = os.path.join(target_dir, filename)
   plt.savefig(filepath)
   plt.close()
+  
+  print(f"Saved: {filename} -> {os.path.basename(target_dir)}")
 
-print(f"All plots successfully generated and saved to: {output_dir}")
+print(f"\nAll plots successfully generated and organized inside: {base_dir}")
