@@ -18,6 +18,9 @@ pairs = [
   ('Exact_BGR_Pct', 'NRI_BGR_100cm_Pct'),
   ('Exact_Fetch_m', 'NRI_Fetch_50cm'),
   ('Exact_Fetch_m', 'NRI_Fetch_100cm'),
+  ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_0cm'),
+  ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_50cm'),
+  ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_100cm'),
   ('Exact_Gap_0_24', 'NRI_Gap_0_24'),
   ('Exact_Gap_25_50', 'NRI_Gap_25_50'),
   ('Exact_Gap_51_100', 'NRI_Gap_51_100'),
@@ -34,7 +37,15 @@ for i, (x_col, y_col) in enumerate(pairs):
   plt.figure(figsize=(8, 6))
   
   # Drop missing values and sort by X to ensure continuous fill boundaries
+  # This perfectly handles our undefined Herb-to-Woody ratios (0 woody pixels)
   subset = df[[x_col, y_col]].dropna().sort_values(by=x_col)
+  
+  # Skip plotting if dropping NaNs leaves us with no data
+  if subset.empty:
+    print(f"Skipping plot for {y_col} vs {x_col} due to insufficient valid data.")
+    plt.close()
+    continue
+
   X = subset[x_col].values
   Y = subset[y_col].values
   
