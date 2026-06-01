@@ -17,9 +17,7 @@ may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Class
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
 # --- SAMPLING DESIGN INCREMENTS ---
-# Added 10000 to random point increments
 PT_INCS = [1, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 10000]
-# Added 3000m (order of magnitude > 300m) to Virtual Transect Lengths
 LN_INCS = [2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
 
 # ====================================================================
@@ -113,23 +111,38 @@ def process_grid_cell(data_packet):
     output_metrics = [bgr_percent, lpi_percent, mean_fetch_exact, hw_ratio_exact, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
 
     # ==========================================
-    # 2. RANDOM POINT UNDERSAMPLING (BGR & FETCH)
+    # 2. RANDOM POINT UNDERSAMPLING 
     # ==========================================
     valid_bare = is_bare[mask]
     valid_fetch = dist_array[mask]
+    
+    # Establish valid herb/woody matrices for random sampling
+    if is_circle:
+      valid_herb = (main_array == herb_value)[mask]
+      valid_woody = (main_array == woody_value)[mask]
+    else:
+      valid_herb = (main_array == herb_value).flatten()
+      valid_woody = (main_array == woody_value).flatten()
+
     num_valid_pts = len(valid_bare)
 
     for n_pts in PT_INCS:
       if num_valid_pts == 0:
-        output_metrics.extend([0.0, 0.0])
+        output_metrics.extend([0.0, 0.0, None])
         continue
       
-      # Sample randomly with replacement to allow dense sampling in small valid areas
       idx = np.random.choice(num_valid_pts, size=n_pts, replace=True)
+      
+      # Sample BGR & Fetch
       smpl_bgr = (np.sum(valid_bare[idx]) / n_pts) * 100
       smpl_fetch = np.mean(valid_fetch[idx])
       
-      output_metrics.extend([smpl_bgr, smpl_fetch])
+      # Sample Herb & Woody to calculate ratio
+      smpl_herb_count = np.sum(valid_herb[idx])
+      smpl_woody_count = np.sum(valid_woody[idx])
+      smpl_hw_ratio = (float(smpl_herb_count) / float(smpl_woody_count)) if smpl_woody_count > 0 else None
+      
+      output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio])
 
     # ==========================================
     # 3. VIRTUAL TRANSECT UNDERSAMPLING (GAP)
@@ -143,15 +156,11 @@ def process_grid_cell(data_packet):
       chunks = []
       
       while collected_px < target_px and num_valid_starts > 0:
-        # Pick random valid start pixel
         r_idx = np.random.randint(0, num_valid_starts)
         sy, sx = valid_y[r_idx], valid_x[r_idx]
-        
-        # Random direction: 0:Right, 1:Down, 2:Left, 3:Up
         direction = np.random.randint(0, 4)
         rem_px = target_px - collected_px
         
-        # Extract a 1D slice of the array
         if direction == 0: 
           chunk = main_array[sy, sx : min(sx + rem_px, ncols)]
           c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
@@ -165,14 +174,13 @@ def process_grid_cell(data_packet):
           chunk = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
           c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
         
-        # Truncate at the first invalid mask pixel (don't jump over circle boundaries)
         invalid_idx = np.where(~c_mask)[0]
         if len(invalid_idx) > 0:
           chunk = chunk[:invalid_idx[0]]
           
         if len(chunk) > 0:
           chunks.append(chunk == target_value)
-          chunks.append(np.array([False])) # Boundary buffer so chunks don't merge gaps
+          chunks.append(np.array([False])) 
           collected_px += len(chunk)
 
       if len(chunks) > 0:
@@ -245,7 +253,6 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
       
   arcpy.management.CreateFeatureclass('memory', 'temp_metrics_fc', 'POLYGON', spatial_reference=sr)
   
-  # --- DYNAMICALLY BUILD ALL FIELDS ---
   arcpy.management.AddField(temp_out, 'Season', 'TEXT')
   
   # 1. Exact Fields
@@ -254,9 +261,9 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
     'Gap_0_24_Exact', 'Gap_25_50_Exact', 'Gap_51_100_Exact', 'Gap_101_200_Exact', 'Gap_gt_200_Exact'
   ]
   
-  # 2. Point Increment Fields
+  # 2. Point Increment Fields (Now includes HW_Ratio_pt)
   for pt in PT_INCS:
-    new_fields.extend([f'BGR_pt_{pt}', f'Fetch_pt_{pt}'])
+    new_fields.extend([f'BGR_pt_{pt}', f'Fetch_pt_{pt}', f'HW_Ratio_pt_{pt}'])
     
   # 3. Line Increment Fields
   for ln in LN_INCS:
@@ -294,8 +301,6 @@ if __name__ == '__main__':
 
   print('\nAll Extracted Metrics & Simulations Processing Complete!')
 
-  # --- CSV EXPORT ---
-  # Define the target Data folder
   csv_out_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
 
   output_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
@@ -304,8 +309,6 @@ if __name__ == '__main__':
 
   print('\n--- Exporting Tables to CSV ---')
 
-  # --- EXPORT LOGIC ---
-  # Dictionary mapping the feature class to its desired CSV filename
   export_tasks = {
     output_grid_10m: 'SRER_Grid_10m_Metrics.csv',
     output_grid_30m: 'SRER_Grid_30m_Metrics.csv',
@@ -315,16 +318,15 @@ if __name__ == '__main__':
   for fc, csv_name in export_tasks.items():
     out_csv_path = os.path.join(csv_out_folder, csv_name)
     
-    # Delete the CSV if it already exists to prevent schema locks
     if arcpy.Exists(out_csv_path):
       arcpy.management.Delete(out_csv_path)
       
     print(f'  -> Exporting {os.path.basename(fc)} to {csv_name}...')
     
-    # Export the attribute table to CSV
     arcpy.conversion.ExportTable(
       in_table=fc,
       out_table=out_csv_path
     )
 
   print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
+  
