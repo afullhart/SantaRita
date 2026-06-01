@@ -66,10 +66,10 @@ def generate_piecewise_plot(data, x_col, y_col, initial_guess):
   plt.plot(x, y_pred, color='red', linewidth=2, label=f'Piecewise Fit ($R^2$={r2:.3f})')
 
   # Add a vertical dashed line at the breakpoint
-  plt.axvline(x=x0, color='gray', linestyle='--', label=f'Breakpoint: {x0:.1f}%')
+  plt.axvline(x=x0, color='gray', linestyle='--', label=f'Breakpoint: {x0:.1f}')
 
   # Add a text box with the slope and breakpoint information
-  stats_text = f"Slope 1: {k1:.3f}\nSlope 2: {k2:.3f}\nBreakpoint: {x0:.1f}%"
+  stats_text = f"Slope 1: {k1:.3f}\nSlope 2: {k2:.3f}\nBreakpoint: {x0:.1f}"
   plt.text(0.05, 0.90, stats_text, 
            transform=plt.gca().transAxes,
            bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
@@ -105,5 +105,10 @@ generate_piecewise_plot(df, 'Exact_BGR_Pct', 'Exact_LPI_Pct', initial_guess=gues
 hw_mean = df['Exact_Herb_Woody_Ratio'].mean()
 guess_hw = [25.0, hw_mean, 0.0, 0.0]
 generate_piecewise_plot(df, 'Exact_BGR_Pct', 'Exact_Herb_Woody_Ratio', initial_guess=guess_hw)
+
+# Plot 3: Exact LPI vs Exact Herb-to-Woody Ratio
+# Reusing the mean Herb-to-Woody ratio for the y0 guess
+guess_lpi_hw = [25.0, hw_mean, 0.0, 0.0]
+generate_piecewise_plot(df, 'Exact_LPI_Pct', 'Exact_Herb_Woody_Ratio', initial_guess=guess_lpi_hw)
 
 print(f"\nAll operations complete! Plots are located in: {output_dir}")
