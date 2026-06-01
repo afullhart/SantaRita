@@ -72,7 +72,7 @@ try:
     in_raster = Int(temp_raster)
 
     # ====================================================================
-    # CORE METRICS (BGR, LPI, FETCH)
+    # CORE METRICS (BGR, LPI, FETCH, HERB/WOODY)
     # ====================================================================
     print("\nCalculating Core Metrics...")
     target_value = 3 
@@ -91,6 +91,20 @@ try:
     max_patch_pixels = np.max(counts[valid_patch_mask]) if np.any(valid_patch_mask) else 0
     
     lpi_percent = (float(max_patch_pixels) / float(total_valid_pixels)) * 100
+
+    # HERB-TO-WOODY RATIO
+    herb_val = 1
+    woody_val = 2
+    herb_pixels = np.sum(main_array == herb_val)
+    woody_pixels = np.sum(main_array == woody_val)
+    
+    # Handle division by zero in case a 10m cell has absolutely no woody cover
+    if woody_pixels > 0:
+        herb_woody_ratio = float(herb_pixels) / float(woody_pixels)
+        ratio_display = f"{herb_woody_ratio:.4f}"
+    else:
+        herb_woody_ratio = None
+        ratio_display = "Undefined (0 Woody Pixels)"
 
     # MODIFIED MEAN FETCH (Strict NumPy Override for 0s)
     print("Calculating Mean Fetch (Including 0s)...")
@@ -162,6 +176,7 @@ try:
     print(f"BGR: {bgr_percent:.4f}%")
     print(f"LPI: {lpi_percent:.4f}%")
     print(f"Mean Fetch: {mean_fetch_exact:.6f} m")
+    print(f"Herb-to-Woody Ratio: {ratio_display}")
     
     print(f"\n--- Canopy Gap Fractions ---")
     print(f"Gap 0-24 cm:    {fraction_0_24:.4f}%")
@@ -180,4 +195,3 @@ except Exception as e:
 finally:
     arcpy.management.Delete("memory")
     arcpy.CheckInExtension("Spatial")
-    
