@@ -20,7 +20,7 @@ sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Class
 # Added 10000 to random point increments
 PT_INCS = [1, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 10000]
 # Added 3000m (order of magnitude > 300m) to Virtual Transect Lengths
-LN_INCS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
+LN_INCS = [2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
 
 # ====================================================================
 # WORKER FUNCTION (Runs on multiple cores)
