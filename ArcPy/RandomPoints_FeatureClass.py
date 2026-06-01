@@ -27,7 +27,10 @@ LN_INCS = [2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
 # ====================================================================
 def process_grid_cell(data_packet):
   oid, season, xmin, ymin, xmax, ymax, tiff_path, c_size, is_circle = data_packet
-  target_value = 3 
+  
+  target_value = 3  
+  herb_value = 1
+  woody_value = 2
   
   try:
     lower_left = arcpy.Point(xmin, ymin)
@@ -71,6 +74,16 @@ def process_grid_cell(data_packet):
     dist_array = distance_transform_edt(is_bare) * c_size
     mean_fetch_exact = np.mean(dist_array[mask]) if is_circle else np.mean(dist_array)
 
+    # --- HERB-TO-WOODY EXACT RATIO ---
+    if is_circle:
+      herb_px = np.sum((main_array == herb_value) & mask)
+      woody_px = np.sum((main_array == woody_value) & mask)
+    else:
+      herb_px = np.sum(main_array == herb_value)
+      woody_px = np.sum(main_array == woody_value)
+
+    hw_ratio_exact = (float(herb_px) / float(woody_px)) if woody_px > 0 else None
+
     horizontal_transects = [main_array[i, :] for i in range(nrows)]
     vertical_transects = [main_array[:, j] for j in range(ncols)]
     all_transects = horizontal_transects + vertical_transects
@@ -97,7 +110,7 @@ def process_grid_cell(data_packet):
     else:
       f_0_24 = f_25_50 = f_51_100 = f_101_200 = f_gt_200 = 0.0
 
-    output_metrics = [bgr_percent, lpi_percent, mean_fetch_exact, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
+    output_metrics = [bgr_percent, lpi_percent, mean_fetch_exact, hw_ratio_exact, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
 
     # ==========================================
     # 2. RANDOM POINT UNDERSAMPLING (BGR & FETCH)
@@ -232,12 +245,12 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
       
   arcpy.management.CreateFeatureclass('memory', 'temp_metrics_fc', 'POLYGON', spatial_reference=sr)
   
-  # --- DYNAMICALLY BUILD ALL 128 FIELDS ---
+  # --- DYNAMICALLY BUILD ALL FIELDS ---
   arcpy.management.AddField(temp_out, 'Season', 'TEXT')
   
   # 1. Exact Fields
   new_fields = [
-    'BGR_Exact', 'LPI_Exact', 'Fetch_Exact', 
+    'BGR_Exact', 'LPI_Exact', 'Fetch_Exact', 'HW_Ratio_Exact',
     'Gap_0_24_Exact', 'Gap_25_50_Exact', 'Gap_51_100_Exact', 'Gap_101_200_Exact', 'Gap_gt_200_Exact'
   ]
   
