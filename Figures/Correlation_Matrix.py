@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -50,12 +51,17 @@ print("Extracting variables and calculating Pearson correlation matrix...")
 df_subset = df[target_cols]
 
 # Calculate the correlation matrix
-# Pandas .corr() automatically handles NaNs (like undefined Herb:Woody ratios) 
-# by dropping them pairwise for the specific calculation.
 corr_matrix = df_subset.corr(method='pearson')
 
-# Set up the matplotlib figure
-plt.figure(figsize=(12, 10))
+# Create a boolean mask to hide the main diagonal
+diagonal_mask = np.eye(len(corr_matrix), dtype=bool)
+
+# Set up the matplotlib figure and explicitly define the axes (ax)
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# Paint the background of the axes black. 
+# Because the diagonal is masked, the black background will show through.
+ax.set_facecolor('black')
 
 # Generate a custom diverging colormap (blue to red)
 cmap = sns.color_palette("vlag", as_cmap=True)
@@ -63,6 +69,7 @@ cmap = sns.color_palette("vlag", as_cmap=True)
 # Draw the heatmap using seaborn
 sns.heatmap(
   corr_matrix, 
+  mask=diagonal_mask,  # Apply the mask to hide the diagonal
   annot=True,          # Show the correlation values in the cells
   fmt=".2f",           # Format to 2 decimal places
   cmap=cmap,           # Color palette
@@ -72,7 +79,8 @@ sns.heatmap(
   linewidths=.5,       # Add gridlines between cells
   cbar_kws={"shrink": .8, "label": "Pearson Correlation Coefficient"},
   xticklabels=clean_labels, 
-  yticklabels=clean_labels
+  yticklabels=clean_labels,
+  ax=ax                # Tell seaborn to plot on our customized black axes
 )
 
 # Rotate the x-axis labels so they don't overlap
