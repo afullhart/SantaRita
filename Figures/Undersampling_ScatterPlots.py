@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
+from scipy import stats
 
 # ====================================================================
 # FOLDER SETUP & ROUTING
@@ -124,7 +125,7 @@ for i, (x_col, y_col) in enumerate(pairs):
   Y_pred = pred_df['mean'].values
 
   # ==================================================================
-  # METRICS CALCULATION (FOR ALL PLOTS)
+  # METRICS CALCULATION
   # ==================================================================
   rmse = np.sqrt(np.mean((Y - Y_pred)**2))
   mae = np.mean(np.abs(Y - Y_pred))
@@ -135,33 +136,97 @@ for i, (x_col, y_col) in enumerate(pairs):
     mre_array[np.isinf(mre_array)] = np.nan
     mre_pct = np.nanmean(mre_array) * 100
 
+  # Calculate Sen's Slope for ALL pairs
+  sens_slope, sens_intercept, sens_lo, sens_up = stats.mstats.theilslopes(Y, X, alpha=0.95)
+
+  # Check which category this pair belongs to
+  is_sampled = 'NRI_' in x_col or 'NRI_' in y_col
+
+  if is_sampled:
+      # ==================================================================
+      # MANN-KENDALL (DYNAMIC 1-TAILED TEST) - SAMPLED ONLY
+      # ==================================================================
+      # Transform data: test if Y scales faster or slower than 1:1 with X
+      Y_transformed = Y - (1.0 * X)
+      tau, p_value_two_tailed = stats.kendalltau(X, Y_transformed)
+    
+      # Determine direction based on Sen's Slope
+      if not pd.isna(tau):
+          if sens_slope > 1:
+              test_direction = "> 1"
+              p_value_one_tailed = p_value_two_tailed / 2 if tau > 0 else 1.0
+          elif sens_slope < 1:
+              test_direction = "< 1"
+              p_value_one_tailed = p_value_two_tailed / 2 if tau < 0 else 1.0
+          else:
+              test_direction = "== 1"
+              p_value_one_tailed = 1.0
+          
+          # Flag for statistical significance (alpha = 0.05)
+          is_sig = p_value_one_tailed < 0.05
+          sig_text = f"Yes ({test_direction})" if is_sig else "No"
+      else:
+          p_value_one_tailed = np.nan
+          test_direction = "N/A"
+          is_sig = False
+          sig_text = "N/A"
+
+      # Base text string with MK Test included
+      text_str = (f'OLS Slope: {slope:.3f}\nIntercept: {intercept:.3f}\n$R^2$: {r_squared:.3f}\n'
+                  f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nMRE%: {mre_pct:.2f}\n'
+                  f'---\n'
+                  f"Sen's Slope: {sens_slope:.3f} ({sens_lo:.2f}, {sens_up:.2f})\n"
+                  f"MK Tau (y-x): {tau:.3f} (p: {p_value_one_tailed:.3f})\n"
+                  f"Sig diff from 1: {sig_text}")
+
+      # Variables to pass into the CSV dictionary
+      mk_tau_out = tau
+      mk_pval_out = p_value_one_tailed
+      test_dir_out = test_direction
+      is_sig_out = is_sig
+      target_dir = sampled_dir
+
+  else:
+      # ==================================================================
+      # EXACT VS EXACT - SKIP MANN KENDALL
+      # ==================================================================
+      # Base text string WITHOUT MK test
+      text_str = (f'OLS Slope: {slope:.3f}\nIntercept: {intercept:.3f}\n$R^2$: {r_squared:.3f}\n'
+                  f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nMRE%: {mre_pct:.2f}\n'
+                  f'---\n'
+                  f"Sen's Slope: {sens_slope:.3f} ({sens_lo:.2f}, {sens_up:.2f})")
+
+      # Variables to pass into the CSV dictionary (Blanked out for cleanliness)
+      mk_tau_out = np.nan
+      mk_pval_out = np.nan
+      test_dir_out = None
+      is_sig_out = None
+      target_dir = exact_dir
+
   # Package metrics for the CSVs
   current_metrics = {
     'X_Column': x_col,
     'Y_Column': y_col,
-    'Slope': slope,
-    'Intercept': intercept,
+    'OLS_Slope': slope,
+    'OLS_Intercept': intercept,
     'R2': r_squared,
     'RMSE': rmse,
     'MAE': mae,
-    'MRE_Pct': mre_pct
+    'MRE_Pct': mre_pct,
+    'Sens_Slope': sens_slope,
+    'Sens_CI_Lower': sens_lo,
+    'Sens_CI_Upper': sens_up,
+    'MK_Tau_Transformed': mk_tau_out,
+    'MK_p_value_1tailed': mk_pval_out,
+    'MK_Test_Direction': test_dir_out,
+    'Slope_Sig_Diff_From_1': is_sig_out
   }
 
-  # Extended text string applied to ALL plots
-  text_str = (f'Slope: {slope:.3f}\nIntercept: {intercept:.3f}\n$R^2$: {r_squared:.3f}\n'
-              f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nMRE%: {mre_pct:.2f}')
-
-  # ==================================================================
-  # ROUTING LOGIC
-  # ==================================================================
-  is_sampled = 'NRI_' in x_col or 'NRI_' in y_col
-  
   if is_sampled:
-    target_dir = sampled_dir
-    sampled_metrics.append(current_metrics)
+      sampled_metrics.append(current_metrics)
   else:
-    target_dir = exact_dir
-    exact_metrics.append(current_metrics)
+      exact_metrics.append(current_metrics)
+
 
   # ==================================================================
   # GRAPHING
@@ -181,7 +246,7 @@ for i, (x_col, y_col) in enumerate(pairs):
   plt.plot(X, pred_df['obs_ci_upper'], color='orange', linestyle='--')
   
   # Add the generated text box to the plot (top left)
-  plt.gca().text(0.05, 0.95, text_str, transform=plt.gca().transAxes, fontsize=10,
+  plt.gca().text(0.05, 0.95, text_str, transform=plt.gca().transAxes, fontsize=9,
     verticalalignment='top', bbox=dict(boxstyle='round,pad=0.5', facecolor='white', alpha=0.8, edgecolor='gray'))
 
   # Formatting the plot
