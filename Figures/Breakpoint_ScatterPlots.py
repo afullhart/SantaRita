@@ -8,10 +8,10 @@ from sklearn.metrics import r2_score
 # ====================================================================
 # CONFIGURATION
 # ====================================================================
-output_dir = r"C:\Users\andre\ScatterPlots"
+output_dir = r'C:\Users\andre\ScatterPlots\Piecewise_Regression'
 os.makedirs(output_dir, exist_ok=True)
 
-csv_path = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots.csv"
+csv_path = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots.csv'
 df = pd.read_csv(csv_path)
 
 # ====================================================================
@@ -127,4 +127,4 @@ for gap_col in gap_cols:
   # Plotting Gap fraction on X-axis, LPI on Y-axis
   generate_piecewise_plot(df, gap_col, 'Exact_LPI_Pct', initial_guess=guess_gap)
 
-print(f"\nAll operations complete! Plots are located in: {output_dir}")
+print(f'\nAll operations complete! Plots are located in: {output_dir}')
