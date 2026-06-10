@@ -15,7 +15,7 @@ input_gee_shapefile = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
-output_fc = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_Grid_Metrics_Model'
+output_fc = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb\SRER_Grid_FeatureClass'
 
 # The exact name of the field in your shapefile containing the month data
 month_field_name = 'month' 
@@ -26,7 +26,11 @@ month_field_name = 'month'
 def process_grid_cell(data_packet):
   """This function runs isolated on a separate CPU core"""
   oid, xmin, ymin, xmax, ymax, tiff_path, c_size = data_packet
-  target_value = 3 
+  
+  # Class values
+  target_value = 3  # Bare ground
+  herb_value = 1    # Herb
+  woody_value = 2   # Woody
   
   try:
     lower_left = arcpy.Point(xmin, ymin)
@@ -63,7 +67,12 @@ def process_grid_cell(data_packet):
     # Calculate mean across ALL pixels in the cell matrix
     mean_fetch_exact = np.mean(dist_array)
 
-    # --- 4. CANOPY GAP FRACTIONS ---
+    # --- 4. HERB-TO-WOODY RATIO ---
+    herb_pixels = np.sum(main_array == herb_value)
+    woody_pixels = np.sum(main_array == woody_value)
+    herb_woody_ratio = (float(herb_pixels) / float(woody_pixels)) if woody_pixels > 0 else None
+
+    # --- 5. CANOPY GAP FRACTIONS ---
     horizontal_transects = [main_array[i, :] for i in range(nrows)]
     vertical_transects = [main_array[:, j] for j in range(ncols)]
     all_transects = horizontal_transects + vertical_transects
@@ -86,7 +95,7 @@ def process_grid_cell(data_packet):
     f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]) / total_transect_length_m) * 100
     f_gt_200 = (np.sum(all_gap_lengths[(all_gap_lengths > 2.00)]) / total_transect_length_m) * 100
 
-    return oid, [bgr_percent, lpi_percent, mean_fetch_exact, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
+    return oid, [bgr_percent, lpi_percent, mean_fetch_exact, herb_woody_ratio, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
     
   except Exception as e:
     return oid, None
@@ -110,7 +119,7 @@ if __name__ == '__main__':
   )
   arcpy.management.CopyFeatures(projected_grid, output_fc)
 
-  new_fields = ['BGR_pct', 'LPI_pct', 'Fetch_m', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
+  new_fields = ['BGR_pct', 'LPI_pct', 'Fetch_m', 'Herb_Woody_Ratio', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
   for field in new_fields:
     arcpy.management.AddField(output_fc, field, 'DOUBLE')
 
@@ -170,7 +179,8 @@ if __name__ == '__main__':
     for row in cursor:
       oid = row[0]
       if oid in results_dict:
-        row[1:9] = results_dict[oid]
+        # Changed slice from row[1:9] to row[1:10] to account for 9 calculated fields
+        row[1:10] = results_dict[oid]
         cursor.updateRow(row)
 
   print('\nProcessing Complete! Seasonal routing, geodetic snapping, and math fixes were successful.')
