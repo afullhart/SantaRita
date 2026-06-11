@@ -90,3 +90,40 @@ graph TD
   class S1,S2,S3 script;
   class O1,O2,O3,O4,O5 output;
 ```
+
+### Scripts
+
+* **`Export_10m_DEM.js`**: Resamples the high-resolution 1m USGS 3DEP Digital Elevation Model to a 10m spatial resolution using a true spatial mean reduction to avoid aliasing errors, and exports it as a stripe-free asset.
+
+* **`Export_Cloud_FeatureClass.js`**: Scans the 2018-2025 Sentinel-2 Harmonized record to locate the optimal 7-day imagery windows for each month based on a custom "True Obscuration" metric, exporting a feature class asset of the clearest dates.
+
+* **`Model_FeatureClass.js`**: Generates 10m Sentinel-2 grid feature class asset that is filtered by spatial overlap with footprints. Adds BGR, LPI, and MFT. Adds Sentinel-2 band values. Adds NDVI, MCARI, BSI, and NBR2. Adds slope, aspect, and illumination based on resampled 10m USGS DEM.
+
+* **`Model_Regressions.js`**: Executes K-folds cross-validation and final models, visualizes prediction map, and exports predicted vs. true values.
+
+* **`Model_Visualization.js`**: Loads the tuned Gradient Tree Boost models, resampled DEM, and optimal cloud windows to dynamically generate interactive, topography-aware predictive maps and local time-series charts.
+
+* **`Model_RegionalTrends.js`**: Exports regionally averaged time series trends to a .csv file.
+
+* **`RAP_Comparison.js`**: Isolates drone-based ground truth data and compares it against the 10m Rangeland Analysis Platform (RAP) by computing Cumulative Distribution Functions (CDFs) to visualize fractional cover distributions.
+
+* **`RAP_Visualization.js`**: Maps the spatial difference (residuals) between the custom SRER predictive model and the 10m RAP product, aggregating monthly predictions into an annual mean and providing an interactive pixel inspector for historical trends.
+
+
+
+### Data sources
+
+* **`5cm Classified Images`**: https://gee-community-catalog.org/projects/srer_drone/
+
+* **`Drone Image Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
+
+* **`Ecological Survey Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
+
+* **`10m Sentinel-2 Images`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+
+* **`Export_10m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
+
+* **`Export_Cloud_FeatureClass.js`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+
+* **`SRER Footprint`**: https://www.arcgis.com/home/item.html?id=1fa8b9b97e844aaf8170a95c6e2a3b76 
+
