@@ -140,7 +140,7 @@ function drapeHillshade(image, minVal, maxVal, customPalette) {
 var mainPanel = ui.Panel({style: {width: '400px', padding: '15px', backgroundColor: '#f8f9fa'}});
 
 var title = ui.Label('SRER Predictive Model', {fontWeight: 'bold', fontSize: '20px', margin: '0 0 15px 0', backgroundColor: '#f8f9fa'});
-var desc = ui.Label('Select a date to render predictive maps. Click anywhere on the map to extract local time-series data.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
+var desc = ui.Label('Select a date to render predictive maps. Click anywhere on the map to extract local time-series data. The time series chart will appear at the bottom of this panel upon clicking.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
 
 var yearLabel = ui.Label('Select Year (2018 - 2025):', {fontWeight: 'bold', backgroundColor: '#f8f9fa'});
 var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {width: '90%'}});
