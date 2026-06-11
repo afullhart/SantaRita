@@ -308,7 +308,7 @@ makeScatterChart(export_csv, 'True_Log_HWR', 'Predicted_Log_HWR', 'Log Herb-to-W
 // =========================================================================
 Export.table.toDrive({
   collection: export_csv,
-  description: 'SRER_Metrics_True_vs_Predicted_GTB_Huber',
+  description: 'SRER_Metrics_True_vs_Predicted',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
