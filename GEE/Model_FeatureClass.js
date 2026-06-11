@@ -1,3 +1,5 @@
+//Takes ~1 hr for the feature collection export to asset (752219.0000 EECU-seconds)
+
 // ========================================================================= 
 // SETUP & ASSETS 
 // ========================================================================= 
@@ -201,12 +203,17 @@ var may_s2_utm = may_s2_data.map(function(f) { return f.transform('EPSG:32612', 
 var sep_s2_utm = sep_s2_data.map(function(f) { return f.transform('EPSG:32612', 0.05); });
 
 // ========================================================================= 
-// PART 3: DRONE METRICS (BGR, LPI, MFT) 
+// PART 3: DRONE METRICS (BGR, LPI, MFT, HERB/WOODY) 
 // =========================================================================
 function processMonthMetrics(grid_subset, classified_img) {
   var native_proj = classified_img.projection();
   // Masked binary for BGR and LPI (Targeting class 3)
   var binary = classified_img.eq(3).selfMask(); 
+  
+  // --- NEW: Create masks for Herb (1) and Woody (2) ---
+  var herbMask = classified_img.eq(1).rename('herb');
+  var woodyMask = classified_img.eq(2).rename('woody');
+  var hwCombined = herbMask.addBands(woodyMask);
   
   return grid_subset.map(function(ft){
     
@@ -248,12 +255,7 @@ function processMonthMetrics(grid_subset, classified_img) {
     // --- 3. MFT Calculation (1000 Random Points + Void Barrier) --- 
     function Get_Mean_Fetch(c_image, geom) {
       // THE VOID FIX: Unmask the image with a dummy value (99).
-      // This converts all NoData edges into solid "obstacles", matching ArcPy's behavior
-      // and preventing the 38m runaway distance transform in incomplete September boundaries.
       var solid_img = c_image.unmask(99);
-      
-      // THE LOGIC FIX: Mean Fetch is the distance TO an obstacle. 
-      // fastDistanceTransform targets '1's. So Obstacles MUST be 1. Bare ground is 0.
       var obstacles = solid_img.neq(3); 
 
       // Calculate pixel distance to nearest obstacle (1), then multiply by 0.05m
@@ -284,7 +286,25 @@ function processMonthMetrics(grid_subset, classified_img) {
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
-    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_mft);
+    // --- 4. HERB-TO-WOODY RATIO ---
+    // Single reducer pass extracts both herb and woody pixel counts
+    var hwCounts = hwCombined.reduceRegion({
+      reducer: ee.Reducer.sum(),
+      geometry: ft.geometry(),
+      scale: 0.05,
+      maxPixels: 1e13
+    });
+
+    var herbCount = ee.Number(hwCounts.get('herb'));
+    var woodyCount = ee.Number(hwCounts.get('woody'));
+
+    var hwRatio = ee.Algorithms.If(
+      woodyCount.gt(0), 
+      herbCount.divide(woodyCount), 
+      null // Null fallback for division by zero
+    );
+
+    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_mft, 'Herb_Woody_Ratio', hwRatio);
   }); 
 }
 
