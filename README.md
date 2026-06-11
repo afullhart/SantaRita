@@ -1,3 +1,6 @@
+### GEE Workflow for Predictive Landscape Metric Maps
+
+```mermaid
 graph TD
   %% Styling Definitions
   classDef input fill:#e1f5fe,stroke:#039be5,stroke-width:2px,stroke-dasharray: 3 3;
@@ -86,3 +89,4 @@ graph TD
   class P1,P2,T1 intermediate;
   class S1,S2,S3 script;
   class O1,O2,O3,O4,O5 output;
+```
