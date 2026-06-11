@@ -135,18 +135,23 @@ var years = ee.List.sequence(2018, 2025);
 var regionalTimeSeriesData = ee.FeatureCollection(years.map(function(y) {
   var year = ee.Number(y);
   
-  // 1. RAP Annual Mean for the region
+  // 1. RAP Annual Mean for the region (Selecting BGR and LTR)
   var rap_col = ee.ImageCollection('projects/rap-data-365417/assets/vegetation-cover-10m')
     .filterDate(year.format('%d').cat('-01-01'), year.format('%d').cat('-12-31'))
     .filterBounds(bounds_geom);
-  var rap_annual_yr = rap_col.mosaic().select('BGR');
+    
+  var rap_annual_yr = rap_col.mosaic().select(['BGR', 'LTR']);
   
-  var rap_mean = rap_annual_yr.reduceRegion({
+  // Create sum band
+  var rap_sum = rap_annual_yr.select('BGR').add(rap_annual_yr.select('LTR')).rename('RAP_Sum');
+  var rap_combined = ee.Image.cat([rap_annual_yr.select('BGR').rename('RAP_BGR'), rap_sum]);
+  
+  var rap_mean = rap_combined.reduceRegion({
     reducer: ee.Reducer.mean(),
     geometry: bounds_geom,
     scale: 60, 
     maxPixels: 1e9
-  }).get('BGR');
+  });
 
   // 2. SRER Model Annual Mean for the region
   var year_wins = cloud_windows.filter(ee.Filter.eq('Year', year)).toList(12);
@@ -167,15 +172,16 @@ var regionalTimeSeriesData = ee.FeatureCollection(years.map(function(y) {
 
   return ee.Feature(null, {
     'Year': year.format('%d'),
-    'RAP_BGR': rap_mean,
+    'RAP_BGR': rap_mean.get('RAP_BGR'),
+    'RAP_Sum': rap_mean.get('RAP_Sum'),
     'Model_BGR': srer_mean
   });
-})).filter(ee.Filter.notNull(['RAP_BGR', 'Model_BGR']));
+})).filter(ee.Filter.notNull(['RAP_BGR', 'Model_BGR', 'RAP_Sum']));
 
 var regionalChart = ui.Chart.feature.byFeature({
   features: regionalTimeSeriesData,
   xProperty: 'Year',
-  yProperties: ['RAP_BGR', 'Model_BGR']
+  yProperties: ['RAP_BGR', 'Model_BGR', 'RAP_Sum']
 })
 .setChartType('LineChart')
 .setOptions({
@@ -183,8 +189,9 @@ var regionalChart = ui.Chart.feature.byFeature({
   hAxis: {title: 'Year'},
   vAxis: {title: 'Mean Bare Ground (%)'},
   series: {
-    0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, 
-    1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} 
+    0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP Bare Ground (10m)'}, 
+    1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'},
+    2: {color: '#984ea3', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP BGR + LTR Sum', lineDashStyle: [4, 4]} 
   },
   interpolateNulls: true
 });
@@ -360,11 +367,14 @@ Map.onClick(function(coords) {
   var timeSeriesData = ee.FeatureCollection(years.map(function(y) {
     var year = ee.Number(y);
     
-    // RAP Annual for this year
+    // RAP Annual for this year (Selecting BGR and LTR)
     var rap_col = ee.ImageCollection('projects/rap-data-365417/assets/vegetation-cover-10m')
       .filterDate(year.format('%d').cat('-01-01'), year.format('%d').cat('-12-31'))
       .filterBounds(point);
-    var rap_annual_yr = rap_col.mosaic().select('BGR');
+      
+    var rap_annual_yr = rap_col.mosaic().select(['BGR', 'LTR']);
+    var rap_sum = rap_annual_yr.select('BGR').add(rap_annual_yr.select('LTR')).rename('RAP_Sum');
+    var rap_combined_yr = ee.Image.cat([rap_annual_yr.select('BGR').rename('RAP_BGR'), rap_sum]);
 
     // SRER Model Annual for this year
     var year_wins = cloud_windows.filter(ee.Filter.eq('Year', year)).toList(12);
@@ -377,7 +387,7 @@ Map.onClick(function(coords) {
     var srer_annual_yr = model_col.mean();
 
     // Sample the point
-    var combined_yr = ee.Image.cat([rap_annual_yr.rename('RAP_BGR'), srer_annual_yr.rename('Model_BGR')]);
+    var combined_yr = ee.Image.cat([rap_combined_yr, srer_annual_yr.rename('Model_BGR')]);
     var sampled_yr = combined_yr.reduceRegion({
       reducer: ee.Reducer.first(),
       geometry: point,
@@ -387,15 +397,16 @@ Map.onClick(function(coords) {
     return ee.Feature(null, {
       'Year': year.format('%d'),
       'RAP_BGR': sampled_yr.get('RAP_BGR'),
+      'RAP_Sum': sampled_yr.get('RAP_Sum'),
       'Model_BGR': sampled_yr.get('Model_BGR')
     });
-  })).filter(ee.Filter.notNull(['RAP_BGR', 'Model_BGR']));
+  })).filter(ee.Filter.notNull(['RAP_BGR', 'Model_BGR', 'RAP_Sum']));
 
   // Render the Chart
   var chart = ui.Chart.feature.byFeature({
     features: timeSeriesData,
     xProperty: 'Year',
-    yProperties: ['RAP_BGR', 'Model_BGR']
+    yProperties: ['RAP_BGR', 'Model_BGR', 'RAP_Sum']
   })
   .setChartType('LineChart')
   .setOptions({
@@ -403,8 +414,9 @@ Map.onClick(function(coords) {
     hAxis: {title: 'Year'},
     vAxis: {title: 'Bare Ground (%)'},
     series: {
-      0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP (10m)'}, 
-      1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'} 
+      0: {color: '#1a9850', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP Bare Ground (10m)'}, 
+      1: {color: '#d73027', lineWidth: 2, pointSize: 4, labelInLegend: 'SRER Model'},
+      2: {color: '#984ea3', lineWidth: 2, pointSize: 4, labelInLegend: 'RAP BGR + LTR Sum', lineDashStyle: [4, 4]}
     },
     interpolateNulls: true,
     backgroundColor: '#ffffff'
