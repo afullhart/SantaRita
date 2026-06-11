@@ -1,4 +1,16 @@
 // =========================================================================
+// USER INPUTS & DATES
+// =========================================================================
+
+// Dry Season (Pre-Monsoon) Dates
+var may_start = '2019-05-26';
+var may_end   = '2019-05-31';
+
+// Post-Monsoon Dates
+var sep_start = '2019-09-10';
+var sep_end   = '2019-09-20';
+
+// =========================================================================
 // SETUP & ASSETS
 // =========================================================================
 var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
@@ -9,10 +21,8 @@ var bounds_geom = bounds_fc.first().geometry().bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING & HILLSHADE VISUALS
 // =========================================================================
-// Load your exported, pre-calculated 10m resampled DEM asset instead of the catalog
 var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled'); 
 
-// Compute hillshade and terrain parameters instantly without on-the-fly aggregation math
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 var hillshade_norm = hillshade.divide(255.0);
 
@@ -24,11 +34,15 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-// We kept null features in the asset to align with the shapefile geometry,
-// but the classifier requires valid numbers. We drop them here right before training.
-var training_fc = fc.filter(ee.Filter.notNull(inputProps));
+// 1. CORE DATASET: Keep all valid points for BGR, LPI, MFT
+var core_training_fc = fc.filter(ee.Filter.notNull(inputProps));
 
-// --- Hyperparameters ---
+// 2. HWR DATASET: Drop nulls and apply Log Transform specifically for HWR
+var hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Ratio'])).map(function(ft) {
+  var log_hwr = ee.Number(ft.get('Herb_Woody_Ratio')).add(1).log(); 
+  return ft.set('Log_HWR', log_hwr);
+});
+
 var hyperpars = {
   numberOfTrees: 400,
   shrinkage: 0.05,
@@ -39,11 +53,13 @@ var hyperpars = {
 };
 
 var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'BGR', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'BGR', inputProperties: inputProps});
 var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'LPI', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'LPI', inputProperties: inputProps});
 var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: training_fc, classProperty: 'MFT', inputProperties: inputProps});
+  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'MFT', inputProperties: inputProps});
+var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars)
+  .setOutputMode('REGRESSION').train({features: hwr_training_fc, classProperty: 'Log_HWR', inputProperties: inputProps});
 
 // =========================================================================
 // SENTINEL-2 EXTRACTION
@@ -60,7 +76,6 @@ function buildS2Composite(startDate, endDate) {
     })
     .filter(ee.Filter.eq('has_aux_bands', true))
     .map(function(img) {
-      // --- Defense 1, 2, 3 ---
       var probMask = img.select('MSK_CLDPRB').lt(20);
       var scl = img.select('SCL');
       var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
@@ -68,7 +83,6 @@ function buildS2Composite(startDate, endDate) {
       var masterMask = probMask.and(sclMask).and(blueMask);
       var maskedImg = img.updateMask(masterMask);
 
-      // --- Calculate Illumination Condition (NO DIVISION) ---
       var sz_num = ee.Number(img.get('MEAN_SOLAR_ZENITH_ANGLE')).multiply(Math.PI / 180);
       var sa_num = ee.Number(img.get('MEAN_SOLAR_AZIMUTH_ANGLE')).multiply(Math.PI / 180);
             
@@ -80,7 +94,6 @@ function buildS2Composite(startDate, endDate) {
       var sinS = terrain_slope.sin();
       var cosAzAsp = sa_img.subtract(terrain_aspect).cos();
             
-      // Calculate illumination and append it directly as a band
       var illumination = cosZ.multiply(cosS).add(sinZ.multiply(sinS).multiply(cosAzAsp)).rename('illumination');
             
       return maskedImg.addBands(illumination);
@@ -100,7 +113,6 @@ function buildS2Composite(startDate, endDate) {
   }).rename('BSI');
   var nbr2 = optical_bands.normalizedDifference(['B11', 'B12']).rename('NBR2');
 
-  // --- Stack optical bands, indices, and all 3 topographic predictors ---
   return optical_bands.addBands([
     ndvi, mcari, bsi, nbr2, 
     sent2_median.select('illumination'),
@@ -109,8 +121,8 @@ function buildS2Composite(startDate, endDate) {
   ]);
 }
 
-function drapeHillshade(image, minVal, maxVal) {
-  var palette = ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027'];
+function drapeHillshade(image, minVal, maxVal, customPalette) {
+  var palette = customPalette || ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027'];
   var hsv = image.visualize({min: minVal, max: maxVal, palette: palette}).divide(255.0).rgbToHsv();
   
   var draped = ee.Image.cat([
@@ -121,61 +133,6 @@ function drapeHillshade(image, minVal, maxVal) {
   return draped.hsvToRgb();
 }
 
-// =========================================================================
-// REGIONAL TIME-SERIES CHART (PRINT TO CONSOLE)
-// =========================================================================
-
-// Map over all optimal cloud windows to generate the regional predictions
-var regionalTimeSeriesData = cloud_windows.map(function(window) {
-  var sDate = ee.String(window.get('Start_Date'));
-  var eDate = ee.Date(sDate).advance(7, 'day');
-  var s2_img = buildS2Composite(sDate, eDate);
-  var p_bgr = s2_img.classify(model_bgr).rename('BGR');
-  var p_lpi = s2_img.classify(model_lpi).rename('LPI');
-  var p_mft = s2_img.classify(model_mft).rename('MFT');
-  var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
-
-  var regional_mean = combined_preds.reduceRegion({
-    reducer: ee.Reducer.mean(),
-    geometry: bounds_geom,
-    scale: 60, 
-    maxPixels: 1e13 
-  });
-
-  return ee.Feature(null, {
-    'system:time_start': window.get('system:time_start'),
-    'BGR_pct': regional_mean.get('BGR'),
-    'LPI_pct': regional_mean.get('LPI'),
-    'Fetch_m': regional_mean.get('MFT')
-  });
-});
-
-regionalTimeSeriesData = regionalTimeSeriesData
-  .filter(ee.Filter.notNull(['BGR_pct', 'LPI_pct', 'Fetch_m']))
-  .sort('system:time_start');
-
-var regionalChart = ui.Chart.feature.byFeature({
-  features: regionalTimeSeriesData,
-  xProperty: 'system:time_start',
-  yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m']
-})
-.setChartType('LineChart')
-.setOptions({
-  title: 'SRER Regional Average: Predicted Metrics Over Time',
-  hAxis: {title: 'Date', format: 'MMM yyyy'},
-  series: {
-    0: {targetAxisIndex: 0, color: '#d73027', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean BGR (%)'},
-    1: {targetAxisIndex: 0, color: '#fc8d59', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean LPI (%)'},
-    2: {targetAxisIndex: 1, color: '#1a9850', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean Fetch (m)'}
-  },
-  vAxes: {
-    0: {title: 'Percentage (%)'},
-    1: {title: 'Mean Fetch Distance (m)'}
-  },
-  interpolateNulls: true
-});
-
-print(regionalChart);
 
 // =========================================================================
 // UI WIDGETS & INTERACTIVITY
@@ -183,7 +140,7 @@ print(regionalChart);
 var mainPanel = ui.Panel({style: {width: '400px', padding: '15px', backgroundColor: '#f8f9fa'}});
 
 var title = ui.Label('SRER Predictive Model', {fontWeight: 'bold', fontSize: '20px', margin: '0 0 15px 0', backgroundColor: '#f8f9fa'});
-var desc = ui.Label('Select a date to render predictive maps. Click anywhere on the map to generate a time-series chart for that location.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
+var desc = ui.Label('Select a date to render predictive maps. Click anywhere on the map to extract local time-series data.', {fontSize: '12px', color: '#555', margin: '0 0 20px 0', backgroundColor: '#f8f9fa'});
 
 var yearLabel = ui.Label('Select Year (2018 - 2025):', {fontWeight: 'bold', backgroundColor: '#f8f9fa'});
 var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {width: '90%'}});
@@ -201,7 +158,7 @@ mainPanel.add(monthLabel);
 mainPanel.add(monthSlider); 
 mainPanel.add(renderBtn);
 mainPanel.add(statusLabel); 
-mainPanel.add(chartPanel); 
+mainPanel.add(chartPanel);
 
 ui.root.insert(0, mainPanel);
 
@@ -223,10 +180,15 @@ function updateMap() {
   var p_bgr = s2_img.classify(model_bgr).rename('Pred_BGR');
   var p_lpi = s2_img.classify(model_lpi).rename('Pred_LPI');
   var p_mft = s2_img.classify(model_mft).rename('Pred_MFT');
+  var p_hwr = s2_img.classify(model_hwr).rename('Pred_Log_HWR');
 
-  var bgr_draped = drapeHillshade(p_bgr, 0, 75);
-  var lpi_draped = drapeHillshade(p_lpi, 0, 80);
-  var mft_draped = drapeHillshade(p_mft, 0, 0.5);
+  var standardPalette = ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027'];
+  var reversedPalette = ['#d73027', '#fc8d59', '#fee08b', '#ffffbf', '#d9ef8b', '#91cf60', '#1a9850'];
+
+  var bgr_draped = drapeHillshade(p_bgr, 0, 75, standardPalette);
+  var lpi_draped = drapeHillshade(p_lpi, 0, 80, standardPalette);
+  var mft_draped = drapeHillshade(p_mft, 0, 0.5, standardPalette);
+  var hwr_draped = drapeHillshade(p_hwr, 0, 1.5, reversedPalette);
 
   var markerLayer = null;
   Map.layers().forEach(function(layer) {
@@ -236,6 +198,7 @@ function updateMap() {
 
   Map.addLayer(hillshade, {min: 0, max: 255}, 'Terrain Hillshade', false);
   Map.addLayer(s2_img, {bands: ['B4', 'B3', 'B2'], min: 0.0, max: 0.3, gamma: 1.4}, 'Sentinel-2 RGB (' + y + '-' + m + ')', false);
+  Map.addLayer(hwr_draped, {}, 'Predicted Log HWR (' + y + '-' + m + ')', false);
   Map.addLayer(mft_draped, {}, 'Predicted MFT (' + y + '-' + m + ')', false);
   Map.addLayer(lpi_draped, {}, 'Predicted LPI (' + y + '-' + m + ')', false);
   Map.addLayer(bgr_draped, {}, 'Predicted BGR (' + y + '-' + m + ')');
@@ -267,41 +230,39 @@ Map.onClick(function(coords) {
   }
   Map.layers().add(dot);
 
-  var timeSeriesData = cloud_windows.map(function(window) {
+  statusLabel.setValue('Extracting time-series... please wait.');
+
+  var timeSeriesRaw = cloud_windows.map(function(window) {
     var sDate = ee.String(window.get('Start_Date'));
     var eDate = ee.Date(sDate).advance(7, 'day');
     var s2_img = buildS2Composite(sDate, eDate);
-    var p_bgr = s2_img.classify(model_bgr).rename('BGR');
-    var p_lpi = s2_img.classify(model_lpi).rename('LPI');
-    var p_mft = s2_img.classify(model_mft).rename('MFT');
-    var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft]);
     
-    var sampled = combined_preds.reduceRegion({
+    var sampled = s2_img.reduceRegion({
       reducer: ee.Reducer.first(),
       geometry: point,
       scale: 10
     });
 
-    return ee.Feature(null, {
-      'system:time_start': window.get('system:time_start'),
-      'BGR_pct': sampled.get('BGR'),
-      'LPI_pct': sampled.get('LPI'),
-      'Fetch_m': sampled.get('MFT')
-    });
+    return ee.Feature(null, sampled).set('system:time_start', window.get('system:time_start'));
   });
 
-  timeSeriesData = timeSeriesData
-    .filter(ee.Filter.notNull(['BGR_pct', 'LPI_pct', 'Fetch_m']))
+  var validTimeSeries = timeSeriesRaw.filter(ee.Filter.notNull(inputProps));
+
+  var classifiedTimeSeries = validTimeSeries
+    .classify({classifier: model_bgr, outputName: 'BGR_pct'})
+    .classify({classifier: model_lpi, outputName: 'LPI_pct'})
+    .classify({classifier: model_mft, outputName: 'Fetch_m'})
+    .classify({classifier: model_hwr, outputName: 'Log_HWR'})
     .sort('system:time_start');
   
   var chart = ui.Chart.feature.byFeature({
-    features: timeSeriesData,
+    features: classifiedTimeSeries,
     xProperty: 'system:time_start',
-    yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m']
+    yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m'] 
   })
   .setChartType('LineChart')
   .setOptions({
-    title: 'Predicted Metrics Over Time',
+    title: 'Predicted Core Metrics Over Time',
     hAxis: {title: 'Date', format: 'MMM yyyy'},
     series: {
       0: {targetAxisIndex: 0, color: '#d73027', lineWidth: 2, pointSize: 3, labelInLegend: 'BGR (%)'},
@@ -310,14 +271,33 @@ Map.onClick(function(coords) {
     },
     vAxes: {
       0: {title: 'Percentage (%)'},
-      1: {title: 'Mean Fetch Distance (m)'}
+      1: {title: 'Mean Fetch Distance (m)'} 
     },
+    interpolateNulls: true,
+    backgroundColor: '#f8f9fa'
+  });
+
+  var hwrChart = ui.Chart.feature.byFeature({
+    features: classifiedTimeSeries,
+    xProperty: 'system:time_start',
+    yProperties: ['Log_HWR']
+  })
+  .setChartType('LineChart')
+  .setOptions({
+    title: 'Predicted Herb-to-Woody Ratio',
+    hAxis: {title: 'Date', format: 'MMM yyyy'},
+    series: {
+      0: {color: '#4575b4', lineWidth: 2, pointSize: 3, labelInLegend: 'Log HWR'} 
+    },
+    vAxis: {title: 'Log Ratio'},
     interpolateNulls: true,
     backgroundColor: '#f8f9fa'
   });
 
   chartPanel.clear();
   chartPanel.add(chart);
+  chartPanel.add(hwrChart);
+  statusLabel.setValue('Time-series charts loaded successfully.');
 });
 
 updateMap();
