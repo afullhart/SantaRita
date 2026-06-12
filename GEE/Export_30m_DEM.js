@@ -39,9 +39,9 @@ Map.addLayer(hillshade_check, {min: 0, max: 255}, 'Stripe-Free Asset Hillshade P
 Export.image.toAsset({
   image: dem_30m_resampled.rename('elevation'),
   description: 'SR_30m_DEM_Resampled',
-  assetId: 'projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled', // Updated Asset ID
+  assetId: 'projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled',
   region: bounds_geom,
-  scale: 30, // THE CRITICAL FIX: Changed from 10 to 30
+  scale: 30,
   crs: 'EPSG:4269', 
   pyramidingPolicy: { 'elevation': 'mean' }
 });
