@@ -1,6 +1,7 @@
 // =========================================================================
 // SETUP & ASSETS
 // =========================================================================
+var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
@@ -18,7 +19,7 @@ function maskClouds(qa) {
 // =========================================================================
 // MONTHLY LANDSAT INVENTORY (1984 - 2025)
 // =========================================================================
-print('Scanning and filtering 40 years of Landsat imagery...');
+print('Scanning and filtering 40 years of Landsat imagery (Strict 80% Filter)...');
 
 var start_year = 1984; 
 var end_year = 2025;   
@@ -43,7 +44,7 @@ var allMonthlyDataList = years.map(function(y) {
       
     var combined_month_col = l9.merge(l8).merge(l7).merge(l5);
     
-    // --- THE FIX: CALCULATE CLEAR PIXEL FRACTION ---
+    // --- CALCULATE CLEAR PIXEL FRACTION ---
     var scored_col = combined_month_col.map(function(img) {
       var qa = img.select('QA_PIXEL');
       var clear_mask = maskClouds(qa);
@@ -64,8 +65,9 @@ var allMonthlyDataList = years.map(function(y) {
       return img.set('Local_Clear_Fraction', fraction);
     });
     
-    // Filter out garbage images (Must cover >70% of the bounds clearly)
-    var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.70));
+    // --- THE FIX: Strict 80% Data Completeness Threshold ---
+    // This rejects solo Landsat 7 images (max ~78% coverage) and heavily clouded scenes
+    var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.80));
     var imgCount = good_col.size();
     
     // Extract the exact system IDs of the surviving images
@@ -83,7 +85,7 @@ var allMonthlyDataList = years.map(function(y) {
       'Start_Date': startDate.format('YYYY-MM-dd'),
       'Window_Label': windowLabel,
       'Image_Count': imgCount,
-      'Valid_IDs': valid_ids, // Saved for the UI script to read
+      'Valid_IDs': valid_ids, 
       'system:time_start': startDate.millis() 
     });
   });
