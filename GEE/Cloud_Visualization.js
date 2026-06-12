@@ -5,155 +5,126 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var bounds_geom = bounds_fc.first().geometry();
 var v_extent = bounds_geom.bounds();
 
-// Load the PRE-CALCULATED Landsat Cloud Windows Asset
-var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_Landsat');
+var monthly_index = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_Landsat');
 
-// Landsat Collection 2 SR visualization parameters
 var rgbVis = {
-  bands: ['red', 'green', 'blue'], 
+  bands: ['red', 'green', 'blue'],
   min: 0.0,
   max: 0.3, 
   gamma: 1.2
 };
 
 // =========================================================================
-// CONSOLE CHART: TIME-SERIES OF ALL OPTIMAL WINDOWS FROM ASSET
+// LANDSAT HARMONIZATION & CLOUD MASKING FUNCTIONS
 // =========================================================================
+function maskClouds(qa) {
+  var dilatedCloud = qa.bitwiseAnd(1 << 1).eq(0);
+  var cirrus = qa.bitwiseAnd(1 << 2).eq(0);
+  var cloud = qa.bitwiseAnd(1 << 3).eq(0);
+  var shadow = qa.bitwiseAnd(1 << 4).eq(0);
+  return dilatedCloud.and(cirrus).and(cloud).and(shadow);
+}
 
-// Ensure the collection is sorted chronologically
-var sortedWindows = cloud_windows.sort('system:time_start');
+function prepOLI(img) {
+  var optical = img.select(['SR_B4', 'SR_B3', 'SR_B2'])
+                   .rename(['red', 'green', 'blue'])
+                   .multiply(0.0000275).add(-0.2); 
+  var qa = img.select('QA_PIXEL');
+  var mask = maskClouds(qa);
+  return optical.updateMask(mask).copyProperties(img, ['system:time_start']);
+}
 
-// Generate the Line Chart directly from the asset
-var cloudChart = ui.Chart.feature.byFeature({
-  features: sortedWindows,
-  xProperty: 'system:time_start',
-  yProperties: ['Mean_Haze_Index']
-})
-.setChartType('LineChart')
-.setOptions({
-  title: 'Landsat Haze Index Proxy (Lowest is Best)',
-  hAxis: {title: 'Date', format: 'MMM yyyy'},
-  vAxis: {title: 'Mean Blue Reflectance'},
-  colors: ['#4575b4'],
-  lineWidth: 2,
-  pointSize: 3
-});
-
-// Print directly to the console
-print('Time-Series: Optimal Window Clarity', cloudChart);
-
+function prepTM(img) {
+  var optical = img.select(['SR_B3', 'SR_B2', 'SR_B1'])
+                   .rename(['red', 'green', 'blue'])
+                   .multiply(0.0000275).add(-0.2); 
+  var qa = img.select('QA_PIXEL');
+  var mask = maskClouds(qa);
+  return optical.updateMask(mask).copyProperties(img, ['system:time_start']);
+}
 
 // =========================================================================
 // UI APP & INTERACTIVITY
 // =========================================================================
-
-// Create a main panel to hold the UI
-var panel = ui.Panel({
-  style: {width: '350px', padding: '15px'}
-});
+var panel = ui.Panel({style: {width: '350px', padding: '15px'}});
 ui.root.insert(0, panel);
 
-// UI Elements
-var title = ui.Label('Landsat 8-Day Composite Viewer', {fontWeight: 'bold', fontSize: '20px'});
-var desc = ui.Label('Select a Year and Month. The script pulls the clearest 8-day composite directly from your pre-calculated asset.');
+var title = ui.Label('Landsat Monthly Median Viewer', {fontWeight: 'bold', fontSize: '20px'});
+var desc = ui.Label('Generates a pristine, cloud-masked monthly median composite using only high-quality images dynamically filtered from the historical archive.', {fontSize: '12px', color: '#555'});
 
 var yearLabel = ui.Label('Select Year:', {fontWeight: 'bold'});
-var yearSlider = ui.Slider({
-  min: 1984, max: 2025, value: 2019, step: 1, // <-- FIXED: Now begins in 1984
-  style: {stretch: 'horizontal'}
-});
+var yearSlider = ui.Slider({min: 1984, max: 2025, value: 2011, step: 1, style: {stretch: 'horizontal'}});
 
 var monthLabel = ui.Label('Select Month:', {fontWeight: 'bold'});
-var monthSlider = ui.Slider({
-  min: 1, max: 12, value: 5, step: 1,
-  style: {stretch: 'horizontal'}
-});
+var monthSlider = ui.Slider({min: 1, max: 12, value: 12, step: 1, style: {stretch: 'horizontal'}});
 
-var statusBox = ui.Label({
-  value: 'Ready. Move sliders to load imagery...',
-  style: {color: 'blue', margin: '20px 0', whiteSpace: 'pre-wrap'}
-});
+var statusBox = ui.Label({value: 'Ready. Move sliders to load imagery...', style: {color: 'blue', margin: '20px 0', whiteSpace: 'pre-wrap'}});
 
-// Add elements to the panel
-panel.add(title);
-panel.add(desc);
-panel.add(yearLabel).add(yearSlider);
-panel.add(monthLabel).add(monthSlider);
-panel.add(statusBox);
+panel.add(title).add(desc).add(yearLabel).add(yearSlider).add(monthLabel).add(monthSlider).add(statusBox);
 
-// Center map on the study area
 Map.centerObject(bounds_geom, 13);
 Map.setOptions('HYBRID'); 
 
-// The main function that runs when sliders change
+// =========================================================================
+// RENDER FUNCTION
+// =========================================================================
 function updateMap() {
   var y = yearSlider.getValue();
   var m = monthSlider.getValue();
   
-  statusBox.setValue('Fetching composite from asset...\n(This is nearly instant!)');
+  statusBox.setValue('Checking asset index for pristine imagery...');
   statusBox.style().set('color', 'orange');
   
-  // Query the asset for this specific year and month
-  var window_query = cloud_windows
+  var index_query = monthly_index
     .filter(ee.Filter.eq('Year', y))
     .filter(ee.Filter.eq('Month', m));
-  
-  // Check if a valid window exists
-  window_query.size().evaluate(function(count) {
+    
+  index_query.size().evaluate(function(count) {
     if (count === 0) {
-      statusBox.setValue('No data found in asset for ' + y + '-' + m + '.\n(Try a different date)');
+      statusBox.setValue('Asset indicates No Clean Data available for ' + y + '-' + m);
       statusBox.style().set('color', 'red');
       Map.layers().reset(); 
       Map.addLayer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds');
       return;
     }
     
-    var optimal_window = ee.Feature(window_query.first());
+    var metadata = ee.Feature(index_query.first());
     
-    optimal_window.evaluate(function(feature) {
+    metadata.evaluate(function(feature) {
       var props = feature.properties;
+      var imgCount = props.Image_Count;
+      var label = props.Window_Label;
+      var valid_ids_str = props.Valid_IDs; 
       
-      // Handle the "No Data" dummy features we created in the asset script
-      if (props.Window_Label.indexOf('No Data') !== -1) {
-        statusBox.setValue('Asset indicates No Data available for ' + y + '-' + m);
-        statusBox.style().set('color', 'red');
-        Map.layers().reset(); 
-        Map.addLayer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds');
-        return;
-      }
-      
-      // Update the UI Text
-      var statusText = 'SUCCESS!' + 
-                       '\nOptimal Dates: ' + props.Window_Label + 
-                       '\nHaze Index (Blue): ' + props.Mean_Haze_Index.toFixed(3);
-      statusBox.setValue(statusText);
+      statusBox.setValue('SUCCESS!\n' + label + '\nFetching exact images...');
       statusBox.style().set('color', 'green');
       
-      // Reconstruct the image collection for the optimal dates
-      var startDate = ee.Date(props.Start_Date);
-      var endDate = startDate.advance(8, 'day'); // Landsat 8-day composite window
+      // Convert comma-separated string back to an EE List
+      var fullIdList = ee.String(valid_ids_str).split(',');
       
-      var landsat_img = ee.ImageCollection('LANDSAT/COMPOSITES/C02/T1_L2_8DAY')
-        .filterBounds(bounds_geom)
-        .filterDate(startDate, endDate)
-        .mosaic() 
-        .clip(v_extent);
+      // --- THE FIX: Extract 'system:index' by splitting at '/' and grabbing the last item ---
+      var indexList = fullIdList.map(function(id) {
+        var parts = ee.String(id).split('/');
+        return parts.get(parts.length().subtract(1));
+      });
+      
+      // Filter the raw collections using ONLY the high-quality indices
+      var l9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2').filter(ee.Filter.inList('system:index', indexList)).map(prepOLI);
+      var l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2').filter(ee.Filter.inList('system:index', indexList)).map(prepOLI);
+      var l7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2').filter(ee.Filter.inList('system:index', indexList)).map(prepTM);
+      var l5 = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2').filter(ee.Filter.inList('system:index', indexList)).map(prepTM);
         
-      // Update the Map Layers
+      var combined_month_col = l9.merge(l8).merge(l7).merge(l5);
+      var monthly_median = combined_month_col.median().clip(v_extent);
+      
       Map.layers().reset(); 
-      
-      // Layer 0: The true color composite (Using the image directly, no scaling math needed!)
-      Map.layers().set(0, ui.Map.Layer(landsat_img, rgbVis, 'Landsat ' + props.Window_Label));
-      
-      // Layer 1: An empty red outline for your bounds
+      Map.layers().set(0, ui.Map.Layer(monthly_median, rgbVis, 'Median ' + y + '-' + m));
       Map.layers().set(1, ui.Map.Layer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds'));
     });
   });
 }
 
-// Attach the update function to the sliders
 yearSlider.onChange(updateMap);
 monthSlider.onChange(updateMap);
 
-// Run it once on script start to load the default (May 2019)
 updateMap();
