@@ -26,15 +26,7 @@ var dem_30m_resampled = dem_1m
   .clip(bounds_geom);
 
 // =========================================================================
-// LIVE MAP VISUALIZATION (QUALITY CHECK)
-// =========================================================================
-var hillshade_check = ee.Terrain.hillshade(dem_30m_resampled, 270, 45);
-
-Map.centerObject(bounds_geom, 12);
-Map.addLayer(hillshade_check, {min: 0, max: 255}, 'Stripe-Free Asset Hillshade Preview');
-
-// =========================================================================
-// BULLETPROOF EXPORT WITH EXPLICIT CRS DEFINITION
+// EXPORT WITH EXPLICIT CRS DEFINITION
 // =========================================================================
 Export.image.toAsset({
   image: dem_30m_resampled.rename('elevation'),
