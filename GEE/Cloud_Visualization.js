@@ -1,117 +1,46 @@
 // =========================================================================
 // SETUP & ASSETS
 // =========================================================================
-var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
-
-// Extract the raw Geometry from the first feature directly
 var bounds_geom = bounds_fc.first().geometry();
 var v_extent = bounds_geom.bounds();
 
-// The exact visualization parameters you requested
+// Load the PRE-CALCULATED Landsat Cloud Windows Asset
+var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_Landsat');
+
+// Landsat Collection 2 SR visualization parameters
 var rgbVis = {
-  bands: ['B4', 'B3', 'B2'],
+  bands: ['red', 'green', 'blue'], 
   min: 0.0,
   max: 0.3, 
-  gamma: 1.4
+  gamma: 1.2
 };
 
 // =========================================================================
-// CORE LOGIC: FIND BEST WINDOW ON-THE-FLY
+// CONSOLE CHART: TIME-SERIES OF ALL OPTIMAL WINDOWS FROM ASSET
 // =========================================================================
-
-function getBestWindowForMonthYear(y, m) {
-  y = ee.Number(y);
-  m = ee.Number(m);
-  
-  var refDate = ee.Date.fromYMD(y, m, 1);
-  var daysInMonth = refDate.advance(1, 'month').difference(refDate, 'day');
-  var startDays = ee.List.sequence(1, daysInMonth.subtract(6));
-  
-  var windows = startDays.map(function(d) {
-    var startDay = ee.Number(d);
-    var startDate = ee.Date.fromYMD(y, m, startDay);
-    var endDateFilter = startDate.advance(7, 'day');
-    var endDateInclusive = startDate.advance(6, 'day');
-    
-    var s2_window = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-      .filterBounds(bounds_geom)
-      .filterDate(startDate, endDateFilter);
-      
-    var imgCount = s2_window.size();
-    var meanCldImg = s2_window.select('MSK_CLDPRB').mean();
-    
-    var meanCld = ee.Algorithms.If(
-      imgCount.eq(0),
-      100, 
-      meanCldImg.reduceRegion({
-        reducer: ee.Reducer.mean(),
-        geometry: bounds_geom,
-        scale: 60,
-        maxPixels: 1e9
-      }).get('MSK_CLDPRB')
-    );
-    
-    meanCld = ee.Algorithms.If(ee.Algorithms.IsEqual(meanCld, null), 100, meanCld);
-    
-    var windowLabel = ee.String(y.format('%d')).cat('-')
-                .cat(m.format('%02d')).cat('-')
-                .cat(startDay.format('%02d')).cat(' to ')
-                .cat(endDateInclusive.format('%02d'));
-    
-    return ee.Feature(null, {
-      'Start_Date': startDate.format('YYYY-MM-dd'),
-      'system:time_start': startDate.millis(), 
-      'Window_Label': windowLabel,
-      'Mean_Cloud_Prob': meanCld,
-      'Image_Count': imgCount
-    });
-  });
-  
-  var windowsFc = ee.FeatureCollection(windows);
-  return windowsFc.sort('Mean_Cloud_Prob').first();
-}
-
-// =========================================================================
-// CONSOLE CHART: TIME-SERIES OF ALL OPTIMAL WINDOWS
-// =========================================================================
-
-// Define the overall historical period
-var start_year = 2018; 
-var end_year = 2025;   
-var yearsList = ee.List.sequence(start_year, end_year);
-var monthsList = ee.List.sequence(1, 12);
-
-// Map over all years and months to generate the full time-series of optimal windows
-var allOptimalWindows = ee.FeatureCollection(
-  yearsList.map(function(y) {
-    return monthsList.map(function(m) {
-      return getBestWindowForMonthYear(y, m);
-    });
-  }).flatten()
-);
 
 // Ensure the collection is sorted chronologically
-allOptimalWindows = allOptimalWindows.sort('system:time_start');
+var sortedWindows = cloud_windows.sort('system:time_start');
 
-// Generate the Line Chart
+// Generate the Line Chart directly from the asset
 var cloudChart = ui.Chart.feature.byFeature({
-  features: allOptimalWindows,
+  features: sortedWindows,
   xProperty: 'system:time_start',
-  yProperties: ['Mean_Cloud_Prob']
+  yProperties: ['Mean_Haze_Index']
 })
 .setChartType('LineChart')
 .setOptions({
-  title: 'Optimal Window Cloud Probability (2018 - 2025)',
+  title: 'Landsat Haze Index Proxy (Lowest is Best)',
   hAxis: {title: 'Date', format: 'MMM yyyy'},
-  vAxis: {title: 'Mean Cloud Probability (%)', viewWindow: {min: 0, max: 100}},
-  colors: ['#1f77b4'],
+  vAxis: {title: 'Mean Blue Reflectance'},
+  colors: ['#4575b4'],
   lineWidth: 2,
   pointSize: 3
 });
 
 // Print directly to the console
-print('Time-Series: Optimal Window Cloud Probabilities', cloudChart);
+print('Time-Series: Optimal Window Clarity', cloudChart);
 
 
 // =========================================================================
@@ -125,12 +54,12 @@ var panel = ui.Panel({
 ui.root.insert(0, panel);
 
 // UI Elements
-var title = ui.Label('Optimal S2 Window Explorer', {fontWeight: 'bold', fontSize: '20px'});
-var desc = ui.Label('Select a Year and Month. The script will find the 7-day window with the absolute lowest cloud probability and display it.');
+var title = ui.Label('Landsat 8-Day Composite Viewer', {fontWeight: 'bold', fontSize: '20px'});
+var desc = ui.Label('Select a Year and Month. The script pulls the clearest 8-day composite directly from your pre-calculated asset.');
 
 var yearLabel = ui.Label('Select Year:', {fontWeight: 'bold'});
 var yearSlider = ui.Slider({
-  min: 2018, max: 2025, value: 2019, step: 1,
+  min: 1984, max: 2025, value: 2019, step: 1, // <-- FIXED: Now begins in 1984
   style: {stretch: 'horizontal'}
 });
 
@@ -141,7 +70,7 @@ var monthSlider = ui.Slider({
 });
 
 var statusBox = ui.Label({
-  value: 'Ready. Move sliders to calculate...',
+  value: 'Ready. Move sliders to load imagery...',
   style: {color: 'blue', margin: '20px 0', whiteSpace: 'pre-wrap'}
 });
 
@@ -154,76 +83,71 @@ panel.add(statusBox);
 
 // Center map on the study area
 Map.centerObject(bounds_geom, 13);
-Map.setOptions('ROADMAP'); 
+Map.setOptions('HYBRID'); 
 
 // The main function that runs when sliders change
 function updateMap() {
   var y = yearSlider.getValue();
   var m = monthSlider.getValue();
   
-  statusBox.setValue('Calculating optimal window...\n(This takes about 2-3 seconds)');
+  statusBox.setValue('Fetching composite from asset...\n(This is nearly instant!)');
   statusBox.style().set('color', 'orange');
   
-  // Ask the server for the best window feature
-  var bestWindowFeature = getBestWindowForMonthYear(y, m);
+  // Query the asset for this specific year and month
+  var window_query = cloud_windows
+    .filter(ee.Filter.eq('Year', y))
+    .filter(ee.Filter.eq('Month', m));
   
-  // .evaluate() pulls the result from the Google server back to your browser UI
-  bestWindowFeature.evaluate(function(feature) {
-    var props = feature.properties;
-    
-    if (props.Image_Count === 0) {
-      statusBox.setValue('No imagery found for ' + y + '-' + m + '.\n(Try a different date)');
+  // Check if a valid window exists
+  window_query.size().evaluate(function(count) {
+    if (count === 0) {
+      statusBox.setValue('No data found in asset for ' + y + '-' + m + '.\n(Try a different date)');
       statusBox.style().set('color', 'red');
       Map.layers().reset(); 
       Map.addLayer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds');
       return;
     }
     
-    // Update the UI Text
-    var statusText = 'SUCCESS!' + 
-                     '\nOptimal Dates: ' + props.Window_Label + 
-                     '\nCloud Probability: ' + props.Mean_Cloud_Prob.toFixed(2) + '%' +
-                     '\nImages in Window: ' + props.Image_Count;
-    statusBox.setValue(statusText);
-    statusBox.style().set('color', 'green');
+    var optimal_window = ee.Feature(window_query.first());
     
-    // Reconstruct the image collection for the optimal dates
-    var startDate = ee.Date(props.Start_Date);
-    var endDateFilter = startDate.advance(7, 'day');
-    
-    var s2_collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-      .filterBounds(bounds_geom)
-      .filterDate(startDate, endDateFilter);
+    optimal_window.evaluate(function(feature) {
+      var props = feature.properties;
       
-    // THE FIX: Triple Defense Masking
-    var s2_mosaic = s2_collection
-      .map(function(img) {
-        // Defense 1: Cloud Probability < 20%
-        var probMask = img.select('MSK_CLDPRB').lt(20);
-        
-        // Defense 2: SCL Explicit Rejection
-        var scl = img.select('SCL');
-        var sclMask = scl.neq(8).and(scl.neq(9)).and(scl.neq(10)).and(scl.neq(11)).and(scl.neq(3));
-        
-        // Defense 3: Hard Physical Brightness Limit
-        var blueMask = img.select('B2').lt(2500);
-        
-        // Combine all three
-        var masterMask = probMask.and(sclMask).and(blueMask);
-        return img.updateMask(masterMask);
-      })
-      .median()
-      .clip(v_extent)
-      .multiply(0.0001); 
+      // Handle the "No Data" dummy features we created in the asset script
+      if (props.Window_Label.indexOf('No Data') !== -1) {
+        statusBox.setValue('Asset indicates No Data available for ' + y + '-' + m);
+        statusBox.style().set('color', 'red');
+        Map.layers().reset(); 
+        Map.addLayer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds');
+        return;
+      }
       
-    // Update the Map Layers
-    Map.layers().reset(); // Clear previous layers
-    
-    // Layer 0: The true color composite
-    Map.layers().set(0, ui.Map.Layer(s2_mosaic, rgbVis, 'Optimal S2: ' + props.Window_Label));
-    
-    // Layer 1: An empty red outline for your bounds
-    Map.layers().set(1, ui.Map.Layer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds'));
+      // Update the UI Text
+      var statusText = 'SUCCESS!' + 
+                       '\nOptimal Dates: ' + props.Window_Label + 
+                       '\nHaze Index (Blue): ' + props.Mean_Haze_Index.toFixed(3);
+      statusBox.setValue(statusText);
+      statusBox.style().set('color', 'green');
+      
+      // Reconstruct the image collection for the optimal dates
+      var startDate = ee.Date(props.Start_Date);
+      var endDate = startDate.advance(8, 'day'); // Landsat 8-day composite window
+      
+      var landsat_img = ee.ImageCollection('LANDSAT/COMPOSITES/C02/T1_L2_8DAY')
+        .filterBounds(bounds_geom)
+        .filterDate(startDate, endDate)
+        .mosaic() 
+        .clip(v_extent);
+        
+      // Update the Map Layers
+      Map.layers().reset(); 
+      
+      // Layer 0: The true color composite (Using the image directly, no scaling math needed!)
+      Map.layers().set(0, ui.Map.Layer(landsat_img, rgbVis, 'Landsat ' + props.Window_Label));
+      
+      // Layer 1: An empty red outline for your bounds
+      Map.layers().set(1, ui.Map.Layer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds'));
+    });
   });
 }
 
