@@ -5,7 +5,7 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
 // =========================================================================
-// CLOUD MASKING LOGIC
+// CLOUD MASKING LOGIC & HARMONIZATION
 // =========================================================================
 function maskClouds(qa) {
   var dilatedCloud = qa.bitwiseAnd(1 << 1).eq(0);
@@ -13,6 +13,16 @@ function maskClouds(qa) {
   var cloud = qa.bitwiseAnd(1 << 3).eq(0);
   var shadow = qa.bitwiseAnd(1 << 4).eq(0);
   return dilatedCloud.and(cirrus).and(cloud).and(shadow);
+}
+
+// --- NEW: Harmonize the NIR band across sensors ---
+// This allows us to apply a unified dark-pixel mask later
+function addNirL89(img) {
+  return img.addBands(img.select('SR_B5').rename('NIR'));
+}
+
+function addNirL57(img) {
+  return img.addBands(img.select('SR_B4').rename('NIR'));
 }
 
 // =========================================================================
@@ -36,10 +46,11 @@ var allMonthlyDataList = years.map(function(y) {
     var startDate = ee.Date.fromYMD(y, m, 1);
     var endDate = startDate.advance(1, 'month'); 
     
-    var l9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate);
-    var l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate);
-    var l7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate);
-    var l5 = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate);
+    // Apply the function to add a standard 'NIR' band to each image before merging
+    var l9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL89);
+    var l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL89);
+    var l7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL57);
+    var l5 = ee.ImageCollection('LANDSAT/LT05/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL57);
       
     var combined_month_col = l9.merge(l8).merge(l7).merge(l5);
     
@@ -47,9 +58,16 @@ var allMonthlyDataList = years.map(function(y) {
     var scored_col = combined_month_col.map(function(img) {
       var qa = img.select('QA_PIXEL');
       var clear_mask = maskClouds(qa);
+      
+      // --- NEW: Dark Pixel (Shadow) Mask ---
+      // Apply the Landsat Collection 2 scale factor before checking the threshold
+      var nir_scaled = img.select('NIR').multiply(0.0000275).add(-0.2);
+      var dark_mask = nir_scaled.gt(0.12); 
+      
       var native_mask = img.select('SR_B2').mask(); 
       
-      var master_mask = clear_mask.and(native_mask).unmask(0).rename('Quality');
+      // Combine QA mask, Dark mask, and Native footprint to define true "Quality" pixels
+      var master_mask = clear_mask.and(dark_mask).and(native_mask).unmask(0).rename('Quality');
       
       var fraction = master_mask.reduceRegion({
         reducer: ee.Reducer.mean(),
@@ -62,7 +80,7 @@ var allMonthlyDataList = years.map(function(y) {
       return img.set('Local_Clear_Fraction', fraction);
     });
     
-    // --- THE FIX: Raised to 20% Data Completeness Threshold ---
+    // --- Data Completeness Threshold ---
     // Safely drops edge-grazing swaths while preserving striped/partially cloudy scenes
     var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.20));
     var imgCount = good_col.size();
