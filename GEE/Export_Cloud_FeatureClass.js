@@ -15,8 +15,7 @@ function maskClouds(qa) {
   return dilatedCloud.and(cirrus).and(cloud).and(shadow);
 }
 
-// --- NEW: Harmonize the NIR band across sensors ---
-// This allows us to apply a unified dark-pixel mask later
+// Harmonize the NIR band across sensors
 function addNirL89(img) {
   return img.addBands(img.select('SR_B5').rename('NIR'));
 }
@@ -46,7 +45,6 @@ var allMonthlyDataList = years.map(function(y) {
     var startDate = ee.Date.fromYMD(y, m, 1);
     var endDate = startDate.advance(1, 'month'); 
     
-    // Apply the function to add a standard 'NIR' band to each image before merging
     var l9 = ee.ImageCollection('LANDSAT/LC09/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL89);
     var l8 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL89);
     var l7 = ee.ImageCollection('LANDSAT/LE07/C02/T1_L2').filterBounds(bounds_geom).filterDate(startDate, endDate).map(addNirL57);
@@ -59,14 +57,12 @@ var allMonthlyDataList = years.map(function(y) {
       var qa = img.select('QA_PIXEL');
       var clear_mask = maskClouds(qa);
       
-      // --- NEW: Dark Pixel (Shadow) Mask ---
-      // Apply the Landsat Collection 2 scale factor before checking the threshold
+      // AGGRESSIVE SHADOW MASK: Raised threshold to 0.15
       var nir_scaled = img.select('NIR').multiply(0.0000275).add(-0.2);
-      var dark_mask = nir_scaled.gt(0.12); 
+      var dark_mask = nir_scaled.gt(0.15); 
       
       var native_mask = img.select('SR_B2').mask(); 
       
-      // Combine QA mask, Dark mask, and Native footprint to define true "Quality" pixels
       var master_mask = clear_mask.and(dark_mask).and(native_mask).unmask(0).rename('Quality');
       
       var fraction = master_mask.reduceRegion({
@@ -80,12 +76,10 @@ var allMonthlyDataList = years.map(function(y) {
       return img.set('Local_Clear_Fraction', fraction);
     });
     
-    // --- Data Completeness Threshold ---
-    // Safely drops edge-grazing swaths while preserving striped/partially cloudy scenes
+    // Data Completeness Threshold
     var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.20));
     var imgCount = good_col.size();
     
-    // Extract the exact system IDs of the surviving images
     var valid_ids = good_col.aggregate_array('system:id').join(',');
     
     var windowLabel = ee.Algorithms.If(
