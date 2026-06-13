@@ -26,21 +26,41 @@ function maskClouds(qa) {
 }
 
 function prepOLI(img) {
-  var optical = img.select(['SR_B4', 'SR_B3', 'SR_B2'])
-                   .rename(['red', 'green', 'blue'])
-                   .multiply(0.0000275).add(-0.2); 
+  // Pull in B5 (NIR) for the shadow mask, plus B4, B3, B2 (RGB)
+  var scaled = img.select(['SR_B5', 'SR_B4', 'SR_B3', 'SR_B2'])
+                  .multiply(0.0000275).add(-0.2); 
+                  
   var qa = img.select('QA_PIXEL');
-  var mask = maskClouds(qa);
-  return optical.updateMask(mask).copyProperties(img, ['system:time_start']);
+  var qaMask = maskClouds(qa);
+  
+  // Apply the dark pixel shadow mask (NIR > 0.12)
+  var darkMask = scaled.select('SR_B5').gt(0.12); 
+  var finalMask = qaMask.and(darkMask);
+
+  // Return only the RGB bands for visualization
+  var optical = scaled.select(['SR_B4', 'SR_B3', 'SR_B2'])
+                      .rename(['red', 'green', 'blue']);
+                      
+  return optical.updateMask(finalMask).copyProperties(img, ['system:time_start']);
 }
 
 function prepTM(img) {
-  var optical = img.select(['SR_B3', 'SR_B2', 'SR_B1'])
-                   .rename(['red', 'green', 'blue'])
-                   .multiply(0.0000275).add(-0.2); 
+  // Pull in B4 (NIR) for the shadow mask, plus B3, B2, B1 (RGB)
+  var scaled = img.select(['SR_B4', 'SR_B3', 'SR_B2', 'SR_B1'])
+                  .multiply(0.0000275).add(-0.2); 
+                  
   var qa = img.select('QA_PIXEL');
-  var mask = maskClouds(qa);
-  return optical.updateMask(mask).copyProperties(img, ['system:time_start']);
+  var qaMask = maskClouds(qa);
+  
+  // Apply the dark pixel shadow mask (NIR > 0.12)
+  var darkMask = scaled.select('SR_B4').gt(0.12); 
+  var finalMask = qaMask.and(darkMask);
+
+  // Return only the RGB bands for visualization
+  var optical = scaled.select(['SR_B3', 'SR_B2', 'SR_B1'])
+                      .rename(['red', 'green', 'blue']);
+                      
+  return optical.updateMask(finalMask).copyProperties(img, ['system:time_start']);
 }
 
 // =========================================================================
@@ -102,7 +122,7 @@ function updateMap() {
       // Convert comma-separated string back to an EE List
       var fullIdList = ee.String(valid_ids_str).split(',');
       
-      // --- THE FIX: Extract 'system:index' by splitting at '/' and grabbing the last item ---
+      // Extract 'system:index' by splitting at '/' and grabbing the last item
       var indexList = fullIdList.map(function(id) {
         var parts = ee.String(id).split('/');
         return parts.get(parts.length().subtract(1));
