@@ -18,7 +18,7 @@ function maskClouds(qa) {
 // =========================================================================
 // MONTHLY LANDSAT INVENTORY (1984 - 2025)
 // =========================================================================
-print('Scanning and filtering 40 years of Landsat imagery (Strict 80% Filter)...');
+print('Scanning and filtering 40 years of Landsat imagery (Pixel-Level Median Strategy)...');
 
 var start_year = 1984; 
 var end_year = 2025;   
@@ -47,12 +47,10 @@ var allMonthlyDataList = years.map(function(y) {
     var scored_col = combined_month_col.map(function(img) {
       var qa = img.select('QA_PIXEL');
       var clear_mask = maskClouds(qa);
-      var native_mask = img.select('SR_B2').mask(); // Identifies data gaps (like L7 stripes)
+      var native_mask = img.select('SR_B2').mask(); 
       
-      // Combine masks. unmask(0) forces missing swaths to pull down the average.
       var master_mask = clear_mask.and(native_mask).unmask(0).rename('Quality');
       
-      // Calculate percentage of the bounds that are perfectly clear and valid
       var fraction = master_mask.reduceRegion({
         reducer: ee.Reducer.mean(),
         geometry: bounds_geom,
@@ -64,9 +62,9 @@ var allMonthlyDataList = years.map(function(y) {
       return img.set('Local_Clear_Fraction', fraction);
     });
     
-    // --- THE FIX: Strict 80% Data Completeness Threshold ---
-    // This rejects solo Landsat 7 images (max ~78% coverage) and heavily clouded scenes
-    var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.80));
+    // --- THE FIX: Raised to 20% Data Completeness Threshold ---
+    // Safely drops edge-grazing swaths while preserving striped/partially cloudy scenes
+    var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.20));
     var imgCount = good_col.size();
     
     // Extract the exact system IDs of the surviving images
@@ -75,7 +73,7 @@ var allMonthlyDataList = years.map(function(y) {
     var windowLabel = ee.Algorithms.If(
       imgCount.eq(0),
       ee.String(y.format('%d')).cat('-').cat(m.format('%02d')).cat(' (No Data)'),
-      ee.String(y.format('%d')).cat('-').cat(m.format('%02d')).cat(' (Median of ').cat(imgCount.format('%d')).cat(' clean imgs)')
+      ee.String(y.format('%d')).cat('-').cat(m.format('%02d')).cat(' (Median of ').cat(imgCount.format('%d')).cat(' imgs)')
     );
 
     return ee.Feature(bounds_geom, {
