@@ -134,6 +134,26 @@ function updateMap() {
       var combined_month_col = l9.merge(l8).merge(l7).merge(l5);
       var monthly_median = combined_month_col.median().clip(v_extent);
       
+      // =====================================================================
+      // NEW: SPECIAL CASE PATCH FOR SEPTEMBER 2019
+      // =====================================================================
+      if (y === 2019 && m === 9) {
+        statusBox.setValue(statusBox.getValue() + '\nApplying Aug 31 patch for data gaps...');
+        
+        // Fetch the specific Landsat 8 data for Aug 31, 2019
+        var aug31_col = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+          .filterBounds(bounds_geom)
+          .filterDate('2019-08-31', '2019-09-01')
+          .map(prepOLI); // Pass it through the exact same 30m square buffer mask
+          
+        var aug31_patch = aug31_col.median().clip(v_extent);
+        
+        // Unmask replaces ONLY the null/masked pixels in the Sept composite
+        // with the valid pixels from the Aug 31 patch.
+        monthly_median = monthly_median.unmask(aug31_patch);
+      }
+      // =====================================================================
+
       Map.layers().reset(); 
       Map.layers().set(0, ui.Map.Layer(monthly_median, rgbVis, 'Median ' + y + '-' + m));
       Map.layers().set(1, ui.Map.Layer(bounds_fc.style({color: 'red', fillColor: '00000000', width: 2}), {}, 'SRER Bounds'));
