@@ -57,13 +57,15 @@ var allMonthlyDataList = years.map(function(y) {
       var qa = img.select('QA_PIXEL');
       var clear_mask = maskClouds(qa);
       
-      // AGGRESSIVE SHADOW MASK: Raised threshold to 0.15
       var nir_scaled = img.select('NIR').multiply(0.0000275).add(-0.2);
       var dark_mask = nir_scaled.gt(0.15); 
-      
       var native_mask = img.select('SR_B2').mask(); 
       
-      var master_mask = clear_mask.and(dark_mask).and(native_mask).unmask(0).rename('Quality');
+      // Combine the masks into a base validity mask
+      var base_mask = clear_mask.and(dark_mask).and(native_mask);
+      
+      // --- THE FIX: Apply a 1-pixel spatial buffer to expand the masked areas ---
+      var master_mask = base_mask.focal_min(1).unmask(0).rename('Quality');
       
       var fraction = master_mask.reduceRegion({
         reducer: ee.Reducer.mean(),
@@ -76,7 +78,6 @@ var allMonthlyDataList = years.map(function(y) {
       return img.set('Local_Clear_Fraction', fraction);
     });
     
-    // Data Completeness Threshold
     var good_col = scored_col.filter(ee.Filter.gte('Local_Clear_Fraction', 0.20));
     var imgCount = good_col.size();
     
