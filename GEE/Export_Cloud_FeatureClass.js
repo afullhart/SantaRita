@@ -65,7 +65,7 @@ var allMonthlyDataList = years.map(function(y) {
       var base_mask = clear_mask.and(dark_mask).and(native_mask);
       
       // --- THE FIX: Apply a 1-pixel spatial buffer to expand the masked areas ---
-      var master_mask = base_mask.focal_min(1).unmask(0).rename('Quality');
+      var master_mask = base_mask.focal_min({radius: 1, kernelType: 'square', units: 'pixels'}).unmask(0).rename('Quality');
       
       var fraction = master_mask.reduceRegion({
         reducer: ee.Reducer.mean(),
