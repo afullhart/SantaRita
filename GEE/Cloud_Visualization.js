@@ -36,7 +36,7 @@ function prepOLI(img) {
   var baseMask = qaMask.and(darkMask);
   
   // --- THE FIX: Apply a 1-pixel spatial buffer to the mask ---
-  var finalMask = baseMask.focal_min({radius: 30, units: 'meters'});
+  var finalMask = baseMask.focal_min({radius: 30, kernelType: 'square', units: 'meters'});
 
   var optical = scaled.select(['SR_B4', 'SR_B3', 'SR_B2'])
                       .rename(['red', 'green', 'blue']);
@@ -55,7 +55,7 @@ function prepTM(img) {
   var baseMask = qaMask.and(darkMask);
 
   // --- THE FIX: Apply a 1-pixel spatial buffer to the mask ---
-  var finalMask = baseMask.focal_min({radius: 30, units: 'meters'});
+  var finalMask = baseMask.focal_min({radius: 30, kernelType: 'square', units: 'meters'});
 
   var optical = scaled.select(['SR_B3', 'SR_B2', 'SR_B1'])
                       .rename(['red', 'green', 'blue']);
