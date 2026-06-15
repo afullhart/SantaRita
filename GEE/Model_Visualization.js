@@ -215,7 +215,7 @@ function updateMap() {
       var bgr_draped = drapeHillshade(p_bgr, 0, 75, standardPalette);
       var lpi_draped = drapeHillshade(p_lpi, 0, 80, standardPalette);
       var mft_draped = drapeHillshade(p_mft, 0, 0.5, standardPalette);
-      var hwr_draped = drapeHillshade(p_hwr, 0, 1.5, reversedPalette);
+      var hwr_draped = drapeHillshade(p_hwr, 0, 2, reversedPalette);
 
       var markerLayer = null;
       Map.layers().forEach(function(layer) {
