@@ -1,4 +1,4 @@
-//Takes ~1 hr for the feature collection export to asset (752219.0000 EECU-seconds)
+//Takes ~1 hr for the feature collection export to asset (800000.0000 EECU-seconds)
 
 // ========================================================================= 
 // SETUP & ASSETS 
