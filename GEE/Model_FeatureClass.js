@@ -4,16 +4,19 @@
 // SETUP & ASSETS 
 // ========================================================================= 
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
+// Extract the raw Geometry from the first feature directly 
 var bounds_geom = bounds_fc.first().geometry(); 
 var v_classified_may = ee.Image('users/gponce/usda_ars/assets/images/aes/srer/suas/2019/full_ortho_classified_may_2019_5cm');
 var v_classified_sep = ee.Image('users/gponce/usda_ars/assets/images/aes/srer/suas/2019/full_ortho_classified_sep_2019_5cm');
 var v_foot_prints = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_drone_footprints');
 
+// Import the ecological states polygons again 
 var v_srer_polys = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_ecological_states')
   .map(function(ft){
     return ft.set('area_ha', ft.area(1).divide(10000));
   });
 
+// Safely returns an ee.Geometry bounding box 
 var v_extent = bounds_geom.bounds(); 
 
 // ========================================================================= 
@@ -204,7 +207,7 @@ function processMonthMetrics(grid_subset, classified_img) {
   
   return grid_subset.map(function(ft){
     
-    // BGR 
+    // --- 1. BGR Calculation --- 
     var v_area_image = binary.multiply(ee.Image.pixelArea());
     var v_area_ft = ft.area(0.05);
     var v_area = v_area_image.reduceRegion({
@@ -212,7 +215,7 @@ function processMonthMetrics(grid_subset, classified_img) {
     }).get('classification');
     var v_pct_area = ee.Number(v_area).divide(v_area_ft).multiply(100);
 
-    // LPI 
+    // --- 2. LPI Calculation --- 
     var patch_vectors = binary.reduceToVectors({
       reducer: ee.Reducer.countEvery(), geometry: ft.geometry(), scale: 0.05, crs: native_proj.crs(),
       geometryType: 'polygon', eightConnected: true, labelProperty: 'class_val', maxPixels: 1e13, tileScale: 16
@@ -227,7 +230,12 @@ function processMonthMetrics(grid_subset, classified_img) {
       areas.length().gt(0), areas.reduce(ee.Reducer.max()), 0
     );
 
-    // MFT 
+    // =======================================================
+    // THE FIX: Convert raw sq meters into a true percentage index
+    // =======================================================
+    var lpi_pct = ee.Number(max_area).divide(v_area_ft).multiply(100);
+
+    // --- 3. MFT Calculation --- 
     function Get_Mean_Fetch(c_image, geom) {
       var solid_img = c_image.unmask(99);
       var obstacles = solid_img.neq(3); 
@@ -250,7 +258,7 @@ function processMonthMetrics(grid_subset, classified_img) {
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
-    // HERB-TO-WOODY
+    // --- 4. HERB-TO-WOODY RATIO ---
     var hwCounts = hwCombined.reduceRegion({
       reducer: ee.Reducer.sum(), geometry: ft.geometry(), scale: 0.05, maxPixels: 1e13
     });
@@ -262,7 +270,7 @@ function processMonthMetrics(grid_subset, classified_img) {
       woodyCount.gt(0), herbCount.divide(woodyCount), null 
     );
 
-    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_mft, 'Herb_Woody_Ratio', hwRatio);
+    return ft.set('LPI', lpi_pct, 'BGR', v_pct_area, 'MFT', v_mft, 'Herb_Woody_Ratio', hwRatio);
   }); 
 }
 
