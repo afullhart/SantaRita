@@ -35,7 +35,6 @@ function prepOLI(img) {
   var darkMask = scaled.select('SR_B5').gt(0.15); 
   var baseMask = qaMask.and(darkMask);
   
-  // --- THE FIX: Apply a 1-pixel spatial buffer to the mask ---
   var finalMask = baseMask.focal_min({radius: 30, kernelType: 'square', units: 'meters'});
 
   var optical = scaled.select(['SR_B4', 'SR_B3', 'SR_B2'])
@@ -54,7 +53,6 @@ function prepTM(img) {
   var darkMask = scaled.select('SR_B4').gt(0.15); 
   var baseMask = qaMask.and(darkMask);
 
-  // --- THE FIX: Apply a 1-pixel spatial buffer to the mask ---
   var finalMask = baseMask.focal_min({radius: 30, kernelType: 'square', units: 'meters'});
 
   var optical = scaled.select(['SR_B3', 'SR_B2', 'SR_B1'])
@@ -73,10 +71,10 @@ var title = ui.Label('Landsat Monthly Median Viewer', {fontWeight: 'bold', fontS
 var desc = ui.Label('Generates a pristine, cloud-masked monthly median composite using only high-quality images dynamically filtered from the historical archive.', {fontSize: '12px', color: '#555'});
 
 var yearLabel = ui.Label('Select Year:', {fontWeight: 'bold'});
-var yearSlider = ui.Slider({min: 1984, max: 2025, value: 2011, step: 1, style: {stretch: 'horizontal'}});
+var yearSlider = ui.Slider({min: 1984, max: 2025, value: 2019, step: 1, style: {stretch: 'horizontal'}});
 
 var monthLabel = ui.Label('Select Month:', {fontWeight: 'bold'});
-var monthSlider = ui.Slider({min: 1, max: 12, value: 12, step: 1, style: {stretch: 'horizontal'}});
+var monthSlider = ui.Slider({min: 1, max: 12, value: 9, step: 1, style: {stretch: 'horizontal'}});
 
 var statusBox = ui.Label({value: 'Ready. Move sliders to load imagery...', style: {color: 'blue', margin: '20px 0', whiteSpace: 'pre-wrap'}});
 
@@ -112,7 +110,6 @@ function updateMap() {
     
     metadata.evaluate(function(feature) {
       var props = feature.properties;
-      var imgCount = props.Image_Count;
       var label = props.Window_Label;
       var valid_ids_str = props.Valid_IDs; 
       
@@ -135,22 +132,22 @@ function updateMap() {
       var monthly_median = combined_month_col.median().clip(v_extent);
       
       // =====================================================================
-      // NEW: SPECIAL CASE PATCH FOR SEPTEMBER 2019
+      // COMPLETELY REPLACE THE IMAGE WITH A SYNTHETIC MEDIAN
       // =====================================================================
       if (y === 2019 && m === 9) {
-        statusBox.setValue(statusBox.getValue() + '\nApplying Aug 31 patch for data gaps...');
+        statusBox.setValue(statusBox.getValue() + '\nReplacing L7 stripes with Aug 31/Oct 2 synthetic median...');
         
-        // Fetch the specific Landsat 8 data for Aug 31, 2019
         var aug31_col = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
           .filterBounds(bounds_geom)
           .filterDate('2019-08-31', '2019-09-01')
-          .map(prepOLI); // Pass it through the exact same 30m square buffer mask
+          .map(prepOLI); 
           
-        var aug31_patch = aug31_col.median().clip(v_extent);
-        
-        // Unmask replaces ONLY the null/masked pixels in the Sept composite
-        // with the valid pixels from the Aug 31 patch.
-        monthly_median = monthly_median.unmask(aug31_patch);
+        var oct02_col = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+          .filterBounds(bounds_geom)
+          .filterDate('2019-10-02', '2019-10-03')
+          .map(prepOLI);
+
+        monthly_median = aug31_col.merge(oct02_col).median().clip(v_extent);
       }
       // =====================================================================
 
