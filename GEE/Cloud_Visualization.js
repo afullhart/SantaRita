@@ -1,7 +1,6 @@
 // =========================================================================
 // SETUP & ASSETS
 // =========================================================================
-var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 
 // Extract the raw Geometry from the first feature directly
