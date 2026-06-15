@@ -176,5 +176,5 @@ Export.table.toDrive({
 Export.table.toAsset({
   collection: bestWindowsFc,
   description: 'Export_Cloud_FeatureClass_Asset',
-  assetId: 'projects/ee-andrewfullhart/assets/Cloud_FeatureClass'
+  assetId: 'projects/ee-andrewfullhart/assets/Cloud_FeatureClass_S2'
 });
