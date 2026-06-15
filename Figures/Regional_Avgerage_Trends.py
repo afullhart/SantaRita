@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 # Load the exported CSV data. This is the output from Model_RegionalTrends.js
-df = pd.read_csv('G:\My Drive\GEE_Downloads\SRER_Regional_Average_TimeSeries_10m.csv')
+df = pd.read_csv('G:\My Drive\GEE_Downloads\SRER_Regional_Average_TimeSeries.csv')
 
 # Ensure Date column is recognized as datetime objects and sorted
 df['Date'] = pd.to_datetime(df['Date'])
