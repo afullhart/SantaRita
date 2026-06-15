@@ -2,7 +2,6 @@
 // REGIONAL TIME-SERIES: EXACT 10m EXPORT TASK
 // =========================================================================
 
-var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_S2');
 var bounds_geom = bounds_fc.first().geometry().bounds();
