@@ -32,28 +32,18 @@ var hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Rat
 });
 
 var hyperpars = {
-  numberOfTrees: 400,
-  shrinkage: 0.05,
-  samplingRate: 0.7,
-  maxNodes: 32,
-  loss: 'Huber',
-  seed: 123
+  numberOfTrees: 400, shrinkage: 0.05, samplingRate: 0.7, maxNodes: 32, loss: 'Huber', seed: 123
 };
 
-var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'BGR', inputProperties: inputProps});
-var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'LPI', inputProperties: inputProps});
-var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'MFT', inputProperties: inputProps});
-var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars)
-  .setOutputMode('REGRESSION').train({features: hwr_training_fc, classProperty: 'Log_HWR', inputProperties: inputProps});
+var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'BGR', inputProperties: inputProps});
+var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'LPI', inputProperties: inputProps});
+var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'MFT', inputProperties: inputProps});
+var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: hwr_training_fc, classProperty: 'Log_HWR', inputProperties: inputProps});
 
 // =========================================================================
 // LANDSAT EXTRACTION PIPELINE & COMPOSITE GENERATOR
 // =========================================================================
-var projLandsat = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
-  .filterBounds(bounds_geom).first().select('SR_B2').projection();
+var projLandsat = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2').filterBounds(bounds_geom).first().select('SR_B2').projection();
 
 function maskClouds(qa) {
   var dilatedCloud = qa.bitwiseAnd(1 << 1).eq(0);
@@ -105,19 +95,24 @@ function buildLandsatComposite(valid_ids_str, year, month) {
   var ls_median = combined.median().clip(bounds_geom);
 
   // =====================================================================
-  // SERVER-SAFE SPECIAL CASE PATCH FOR SEPTEMBER 2019
+  // SERVER-SAFE SYNTHETIC MEDIAN REPLACEMENT FOR SEPTEMBER 2019
   // =====================================================================
-  // Generates a boolean image (1 if target date, 0 otherwise)
-  var isTarget = ee.Image.constant(ee.Number(year).eq(2019).and(ee.Number(month).eq(9)));
+  var isTargetCond = ee.Number(year).eq(2019).and(ee.Number(month).eq(9));
   
   var aug31_col = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
     .filterBounds(bounds_geom)
     .filterDate('2019-08-31', '2019-09-01')
     .map(prepOLI); 
     
-  // If not Sept 2019, the mask zeros out the patch and nothing is filled
-  var aug31_patch = aug31_col.median().clip(bounds_geom).updateMask(isTarget);
-  ls_median = ls_median.unmask(aug31_patch);
+  var oct02_col = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
+    .filterBounds(bounds_geom)
+    .filterDate('2019-10-02', '2019-10-03')
+    .map(prepOLI);
+
+  var synthetic_sept = aug31_col.merge(oct02_col).median().clip(bounds_geom);
+
+  // If the target condition is met, completely substitute the synthetic median
+  ls_median = ee.Image(ee.Algorithms.If(isTargetCond, synthetic_sept, ls_median));
   // =====================================================================
 
   var optical_bands = ls_median.setDefaultProjection({crs: projLandsat.crs(), scale: projLandsat.nominalScale()});
@@ -164,7 +159,6 @@ var yearSlider = ui.Slider({min: 1984, max: 2025, value: 2019, step: 1, style: {
 var monthLabel = ui.Label('Select Month (1 - 12):', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var monthSlider = ui.Slider({min: 1, max: 12, value: 9, step: 1, style: {width: '90%'}});
 
-// Memory Management Chart Selector
 var chartSelectLabel = ui.Label('Select Chart to Render (Saves Memory):', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var chartSelect = ui.Select({
   items: ['Core Metrics (BGR, LPI, MFT)', 'Herb-to-Woody Ratio (Log HWR)'],
@@ -208,7 +202,6 @@ function updateMap() {
       var valid_ids_str = feat.properties.Valid_IDs;
       var label = feat.properties.Window_Label;
       
-      // Pass the year and month so the September 2019 patch can trigger if needed
       var ls_img = buildLandsatComposite(valid_ids_str, y, m);
 
       var p_bgr = ls_img.classify(model_bgr).rename('Pred_BGR');
@@ -272,10 +265,8 @@ Map.onClick(function(coords) {
     var year = ee.Number(window.get('Year'));
     var month = ee.Number(window.get('Month'));
     
-    // Pass the server-side year and month to ensure the Sept 2019 data is patched for the chart
     var ls_img = buildLandsatComposite(valid_ids_str, year, month);
     
-    // Extacts an exact 60m regional average around the clicked point
     var sampled = ls_img.reduceRegion({
       reducer: ee.Reducer.mean(),
       geometry: point.buffer(30), 
