@@ -203,7 +203,9 @@ function processMonthMetrics(grid_subset, classified_img) {
   
   var herbMask = classified_img.eq(1).rename('herb');
   var woodyMask = classified_img.eq(2).rename('woody');
-  var hwCombined = herbMask.addBands(woodyMask);
+  
+  // Multiply by pixelArea to calculate raw square meter coverage
+  var hwCombined = herbMask.addBands(woodyMask).multiply(ee.Image.pixelArea());
   
   return grid_subset.map(function(ft){
     
@@ -230,9 +232,7 @@ function processMonthMetrics(grid_subset, classified_img) {
       areas.length().gt(0), areas.reduce(ee.Reducer.max()), 0
     );
 
-    // =======================================================
-    // THE FIX: Convert raw sq meters into a true percentage index
-    // =======================================================
+    // Convert raw sq meters into a true percentage index
     var lpi_pct = ee.Number(max_area).divide(v_area_ft).multiply(100);
 
     // --- 3. MFT Calculation --- 
@@ -258,19 +258,30 @@ function processMonthMetrics(grid_subset, classified_img) {
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
-    // --- 4. HERB-TO-WOODY RATIO ---
-    var hwCounts = hwCombined.reduceRegion({
+    // --- 4. HERB, WOODY, & RATIO CALCULATION ---
+    var hwAreas = hwCombined.reduceRegion({
       reducer: ee.Reducer.sum(), geometry: ft.geometry(), scale: 0.05, maxPixels: 1e13
     });
 
-    var herbCount = ee.Number(hwCounts.get('herb'));
-    var woodyCount = ee.Number(hwCounts.get('woody'));
+    var herbArea = ee.Number(hwAreas.get('herb'));
+    var woodyArea = ee.Number(hwAreas.get('woody'));
+
+    // Convert raw square meters into a percentage of the total cell
+    var herbPct = herbArea.divide(v_area_ft).multiply(100);
+    var woodyPct = woodyArea.divide(v_area_ft).multiply(100);
 
     var hwRatio = ee.Algorithms.If(
-      woodyCount.gt(0), herbCount.divide(woodyCount), null 
+      woodyArea.gt(0), herbArea.divide(woodyArea), null 
     );
 
-    return ft.set('LPI', lpi_pct, 'BGR', v_pct_area, 'MFT', v_mft, 'Herb_Woody_Ratio', hwRatio);
+    return ft.set(
+      'LPI', lpi_pct, 
+      'BGR', v_pct_area, 
+      'MFT', v_mft, 
+      'Herb_Woody_Ratio', hwRatio,
+      'Herb_pct', herbPct,
+      'Woody_pct', woodyPct
+    );
   }); 
 }
 
