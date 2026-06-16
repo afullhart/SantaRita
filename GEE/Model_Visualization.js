@@ -125,7 +125,6 @@ function drapeHillshade(image, minVal, maxVal, customPalette) {
   return draped.hsvToRgb();
 }
 
-
 // =========================================================================
 // UI WIDGETS & INTERACTIVITY
 // =========================================================================
@@ -139,7 +138,10 @@ var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {
 var monthLabel = ui.Label('Select Month (1 - 12):', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var monthSlider = ui.Slider({min: 1, max: 12, value: 5, step: 1, style: {width: '90%'}});
 
-// Added new Absolute Cover Chart Option to Memory Management
+var statusLabel = ui.Label('Ready to render.', {color: 'blue', fontWeight: 'bold', margin: '20px 0', backgroundColor: '#f8f9fa'});
+var renderBtn = ui.Button({label: 'Generate Predictive Maps', onClick: updateMap, style: {stretch: 'horizontal', margin: '20px 0 0 0'}});
+
+// Chart Selection Options
 var chartSelectLabel = ui.Label('Select Chart to Render:', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var chartSelect = ui.Select({
   items: ['Core Metrics (BGR, LPI, MFT)', 'Absolute Cover (Herb & Woody)', 'Herb-to-Woody Ratio (Log HWR)'],
@@ -147,13 +149,13 @@ var chartSelect = ui.Select({
   style: {width: '90%'}
 });
 
-var statusLabel = ui.Label('Ready to render.', {color: 'blue', fontWeight: 'bold', margin: '20px 0', backgroundColor: '#f8f9fa'});
-var renderBtn = ui.Button({label: 'Generate Predictive Maps', onClick: updateMap, style: {stretch: 'horizontal', margin: '20px 0 0 0'}});
 var chartPanel = ui.Panel({style: {margin: '20px 0 0 0', backgroundColor: '#f8f9fa'}});
 
+// Add items to panel in the new desired order
 mainPanel.add(title).add(desc).add(yearLabel).add(yearSlider).add(monthLabel).add(monthSlider);
+mainPanel.add(renderBtn).add(statusLabel); // Moved up below the month slider
 mainPanel.add(chartSelectLabel).add(chartSelect); 
-mainPanel.add(renderBtn).add(statusLabel).add(chartPanel);
+mainPanel.add(chartPanel);
 
 ui.root.insert(0, mainPanel);
 
