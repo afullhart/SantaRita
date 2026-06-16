@@ -2,6 +2,7 @@
 // REGIONAL TIME-SERIES: EXACT 10m EXPORT TASK
 // =========================================================================
 
+var fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_s2_model_grid_utm');
 var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bounds');
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_S2');
 var bounds_geom = bounds_fc.first().geometry().bounds();
@@ -12,7 +13,8 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-var core_training_fc = fc.filter(ee.Filter.notNull(inputProps));
+// Filter for core valid data, explicitly ensuring Herb and Woody percent values exist
+var core_training_fc = fc.filter(ee.Filter.notNull(inputProps.concat(['Herb_pct', 'Woody_pct'])));
 var hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Ratio'])).map(function(ft) {
   var log_hwr = ee.Number(ft.get('Herb_Woody_Ratio')).add(1).log(); 
   return ft.set('Log_HWR', log_hwr);
@@ -23,6 +25,8 @@ var hyperpars = { numberOfTrees: 400, shrinkage: 0.05, samplingRate: 0.7, maxNod
 var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'BGR', inputProperties: inputProps});
 var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'LPI', inputProperties: inputProps});
 var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'MFT', inputProperties: inputProps});
+var model_herb = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'Herb_pct', inputProperties: inputProps});
+var model_woody = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'Woody_pct', inputProperties: inputProps});
 var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: hwr_training_fc, classProperty: 'Log_HWR', inputProperties: inputProps});
 
 var projSent2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').filterBounds(bounds_geom).first().select('B2').projection();
@@ -79,9 +83,11 @@ var regionalTimeSeriesData = cloud_windows.map(function(window) {
   var p_bgr = s2_img.classify(model_bgr).rename('BGR_pct');
   var p_lpi = s2_img.classify(model_lpi).rename('LPI_pct');
   var p_mft = s2_img.classify(model_mft).rename('Fetch_m');
+  var p_herb = s2_img.classify(model_herb).rename('Herb_pct');
+  var p_woody = s2_img.classify(model_woody).rename('Woody_pct');
   var p_hwr = s2_img.classify(model_hwr).rename('Log_HWR');
 
-  var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft, p_hwr]);
+  var combined_preds = ee.Image.cat([p_bgr, p_lpi, p_mft, p_herb, p_woody, p_hwr]);
 
   // EXACT 10m REDUCTION
   var regional_mean = combined_preds.reduceRegion({
@@ -98,6 +104,8 @@ var regionalTimeSeriesData = cloud_windows.map(function(window) {
     'Mean_BGR_pct': regional_mean.get('BGR_pct'),
     'Mean_LPI_pct': regional_mean.get('LPI_pct'),
     'Mean_Fetch_m': regional_mean.get('Fetch_m'),
+    'Mean_Herb_pct': regional_mean.get('Herb_pct'),
+    'Mean_Woody_pct': regional_mean.get('Woody_pct'),
     'Mean_Log_HWR': regional_mean.get('Log_HWR') 
   });
 });
@@ -110,5 +118,5 @@ Export.table.toDrive({
   description: 'SRER_Regional_Average_TimeSeries',
   folder: 'GEE_Downloads',
   fileFormat: 'CSV',
-  selectors: ['Date', 'System_Time', 'Mean_BGR_pct', 'Mean_LPI_pct', 'Mean_Fetch_m', 'Mean_Log_HWR']
+  selectors: ['Date', 'System_Time', 'Mean_BGR_pct', 'Mean_LPI_pct', 'Mean_Fetch_m', 'Mean_Herb_pct', 'Mean_Woody_pct', 'Mean_Log_HWR']
 });
