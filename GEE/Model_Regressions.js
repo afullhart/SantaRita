@@ -19,7 +19,7 @@ var inputProps = [
 // =========================================================================
 // We kept null features in the asset to align with the shapefile geometry,
 // but the classifier requires valid numbers. We drop them here right before training.
-var validPropsCheck = inputProps.concat(['Herb_Woody_Ratio']);
+var validPropsCheck = inputProps.concat(['Herb_Woody_Ratio', 'Herb_pct', 'Woody_pct']);
 fc = fc.filter(ee.Filter.notNull(validPropsCheck));
 
 // --- Log Transform HWR Values to avoid exploding values ---
@@ -106,6 +106,10 @@ var cv_lpi = runCV('LPI');
 print('LPI RMSE -> May:', cv_lpi.get('May_Median'), '| Sept:', cv_lpi.get('Sept_Median'));
 var cv_mft = runCV('MFT');
 print('MFT RMSE -> May:', cv_mft.get('May_Median'), '| Sept:', cv_mft.get('Sept_Median'));
+var cv_herb = runCV('Herb_pct');
+print('Herb_pct RMSE -> May:', cv_herb.get('May_Median'), '| Sept:', cv_herb.get('Sept_Median'));
+var cv_woody = runCV('Woody_pct');
+print('Woody_pct RMSE -> May:', cv_woody.get('May_Median'), '| Sept:', cv_woody.get('Sept_Median'));
 var cv_hwr = runCV('Log_HWR');
 print('Log_HWR RMSE -> May:', cv_hwr.get('May_Median'), '| Sept:', cv_hwr.get('Sept_Median'));
 print('-------------------------------------------------------');
@@ -122,6 +126,10 @@ var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'LPI', inputProperties: inputProps});
 var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'MFT', inputProperties: inputProps});
+var model_herb = ee.Classifier.smileGradientTreeBoost(hyperpars)
+  .setOutputMode('REGRESSION').train({features: fc, classProperty: 'Herb_pct', inputProperties: inputProps});
+var model_woody = ee.Classifier.smileGradientTreeBoost(hyperpars)
+  .setOutputMode('REGRESSION').train({features: fc, classProperty: 'Woody_pct', inputProperties: inputProps});
 var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: fc, classProperty: 'Log_HWR', inputProperties: inputProps});
 
@@ -151,6 +159,8 @@ print('--- FITTED MODEL RMSE (STRATIFIED TRAINING ERROR) ---');
 print('Fitted BGR RMSE -> May:', getStratifiedTrainingRMSE(model_bgr, fc, 'BGR', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_bgr, fc, 'BGR', 'Sept'));
 print('Fitted LPI RMSE -> May:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_lpi, fc, 'LPI', 'Sept'));
 print('Fitted MFT RMSE -> May:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_mft, fc, 'MFT', 'Sept'));
+print('Fitted Herb_pct RMSE -> May:', getStratifiedTrainingRMSE(model_herb, fc, 'Herb_pct', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_herb, fc, 'Herb_pct', 'Sept'));
+print('Fitted Woody_pct RMSE -> May:', getStratifiedTrainingRMSE(model_woody, fc, 'Woody_pct', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_woody, fc, 'Woody_pct', 'Sept'));
 print('Fitted Log_HWR RMSE -> May:', getStratifiedTrainingRMSE(model_hwr, fc, 'Log_HWR', 'May'), '| Sept:', getStratifiedTrainingRMSE(model_hwr, fc, 'Log_HWR', 'Sept'));
 print('-----------------------------------------------------');
 
@@ -161,7 +171,9 @@ function predictFeatures(dataset) {
   var p_bgr = dataset.classify({classifier: model_bgr, outputName: 'Pred_BGR'});
   var p_lpi = p_bgr.classify({classifier: model_lpi, outputName: 'Pred_LPI'});
   var p_mft = p_lpi.classify({classifier: model_mft, outputName: 'Pred_MFT'});
-  return p_mft.classify({classifier: model_hwr, outputName: 'Pred_Log_HWR'});
+  var p_herb = p_mft.classify({classifier: model_herb, outputName: 'Pred_Herb_pct'});
+  var p_woody = p_herb.classify({classifier: model_woody, outputName: 'Pred_Woody_pct'});
+  return p_woody.classify({classifier: model_hwr, outputName: 'Pred_Log_HWR'});
 }
 
 var final_predictions = predictFeatures(fc_may).merge(predictFeatures(fc_sep));
@@ -172,6 +184,8 @@ var export_csv = final_predictions.map(function(ft) {
     'True_BGR': ft.get('BGR'), 'Predicted_BGR': ft.get('Pred_BGR'),
     'True_LPI': ft.get('LPI'), 'Predicted_LPI': ft.get('Pred_LPI'),
     'True_MFT': ft.get('MFT'), 'Predicted_MFT': ft.get('Pred_MFT'),
+    'True_Herb_pct': ft.get('Herb_pct'), 'Predicted_Herb_pct': ft.get('Pred_Herb_pct'),
+    'True_Woody_pct': ft.get('Woody_pct'), 'Predicted_Woody_pct': ft.get('Pred_Woody_pct'),
     'True_Log_HWR': ft.get('Log_HWR'), 'Predicted_Log_HWR': ft.get('Pred_Log_HWR')
   });
 });
@@ -213,6 +227,8 @@ function makeScatterChart(dataset, trueProp, predProp, title, colorCode) {
 makeScatterChart(export_csv, 'True_BGR', 'Predicted_BGR', 'Bare Ground (BGR %)', '#d73027'); 
 makeScatterChart(export_csv, 'True_LPI', 'Predicted_LPI', 'Large Patch Index (LPI %)', '#fc8d59'); 
 makeScatterChart(export_csv, 'True_MFT', 'Predicted_MFT', 'Mean Fetch (MFT m)', '#1a9850'); 
+makeScatterChart(export_csv, 'True_Herb_pct', 'Predicted_Herb_pct', 'Herbaceous Cover (%)', '#91cf60'); 
+makeScatterChart(export_csv, 'True_Woody_pct', 'Predicted_Woody_pct', 'Woody Cover (%)', '#8c510a'); 
 makeScatterChart(export_csv, 'True_Log_HWR', 'Predicted_Log_HWR', 'Log Herb-to-Woody Ratio', '#4575b4'); 
 
 // =========================================================================
