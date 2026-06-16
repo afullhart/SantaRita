@@ -29,7 +29,7 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // ========================================================================= 
 // DYNAMIC DATES (PULLED FROM CLOUD ASSET) 
 // ========================================================================= 
-var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_S2');
+var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
 
 // Query the asset for May 2019 
 var may_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 5)).first());
@@ -210,10 +210,12 @@ function processMonthMetrics(grid_subset, classified_img) {
   // Masked binary for BGR and LPI (Targeting class 3)
   var binary = classified_img.eq(3).selfMask(); 
   
-  // --- NEW: Create masks for Herb (1) and Woody (2) ---
+  // Create masks for Herb (1) and Woody (2) 
   var herbMask = classified_img.eq(1).rename('herb');
   var woodyMask = classified_img.eq(2).rename('woody');
-  var hwCombined = herbMask.addBands(woodyMask);
+  
+  // Combine masks and multiply by pixelArea to calculate raw square meter coverage
+  var hwCombined = herbMask.addBands(woodyMask).multiply(ee.Image.pixelArea());
   
   return grid_subset.map(function(ft){
     
@@ -251,6 +253,8 @@ function processMonthMetrics(grid_subset, classified_img) {
       areas.reduce(ee.Reducer.max()),
       0
     );
+    // Correct LPI to be a percentage of the cell
+    var lpi_pct = ee.Number(max_area).divide(v_area_ft).multiply(100);
 
     // --- 3. MFT Calculation (1000 Random Points + Void Barrier) --- 
     function Get_Mean_Fetch(c_image, geom) {
@@ -278,7 +282,7 @@ function processMonthMetrics(grid_subset, classified_img) {
         scale: 0.05
       });
 
-      // THE MATH FIX: Filter out nulls and use Earth Engine's native mean aggregator
+      // Filter out nulls and use Earth Engine's native mean aggregator
       var valid_points = sampled_points.filter(ee.Filter.notNull(['distance']));
       
       return ee.Number(valid_points.aggregate_mean('distance'));
@@ -286,25 +290,37 @@ function processMonthMetrics(grid_subset, classified_img) {
     
     var v_mft = Get_Mean_Fetch(classified_img, ft.geometry());
 
-    // --- 4. HERB-TO-WOODY RATIO ---
-    // Single reducer pass extracts both herb and woody pixel counts
-    var hwCounts = hwCombined.reduceRegion({
+    // --- 4. HERB, WOODY, & RATIO CALCULATION ---
+    // Single reducer pass extracts the total square meters of both herb and woody 
+    var hwAreas = hwCombined.reduceRegion({
       reducer: ee.Reducer.sum(),
       geometry: ft.geometry(),
       scale: 0.05,
       maxPixels: 1e13
     });
 
-    var herbCount = ee.Number(hwCounts.get('herb'));
-    var woodyCount = ee.Number(hwCounts.get('woody'));
+    var herbArea = ee.Number(hwAreas.get('herb'));
+    var woodyArea = ee.Number(hwAreas.get('woody'));
 
+    // Convert raw square meters into a percentage of the total cell
+    var herbPct = herbArea.divide(v_area_ft).multiply(100);
+    var woodyPct = woodyArea.divide(v_area_ft).multiply(100);
+
+    // The ratio math remains exactly the same because the area multipliers cancel out
     var hwRatio = ee.Algorithms.If(
-      woodyCount.gt(0), 
-      herbCount.divide(woodyCount), 
+      woodyArea.gt(0), 
+      herbArea.divide(woodyArea), 
       null // Null fallback for division by zero
     );
 
-    return ft.set('LPI', max_area, 'BGR', v_pct_area, 'MFT', v_mft, 'Herb_Woody_Ratio', hwRatio);
+    return ft.set(
+      'LPI', lpi_pct, 
+      'BGR', v_pct_area, 
+      'MFT', v_mft, 
+      'Herb_Woody_Ratio', hwRatio,
+      'Herb_pct', herbPct,
+      'Woody_pct', woodyPct
+    );
   }); 
 }
 
