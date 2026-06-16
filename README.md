@@ -44,8 +44,6 @@ graph TD
     O1["Model_Regressions.js"]
     O2["Model_Visualization.js"]
     O5["Model_RegionalTrends.js"]
-    O3["RAP_Comparison.js"]
-    O4["RAP_Visualization.js"]
   end
 
   %% --- FLOW CONNECTIONS ---
@@ -81,14 +79,12 @@ graph TD
   J2 --> O1
   J2 --> O2
   J2 --> O5
-  J2 --> O3
-  J2 --> O4
 
   %% Assigning Classes for Visual Distinction
   class I1,I2,I3,I4,I5 input;
   class P1,P2,T1 intermediate;
   class S1,S2,S3 script;
-  class O1,O2,O3,O4,O5 output;
+  class O1,O2,O5 output;
 ```
 
 ### Scripts
@@ -104,12 +100,6 @@ graph TD
 * **`Model_Visualization.js`**: Loads the tuned Gradient Tree Boost models, resampled DEM, and optimal cloud windows to dynamically generate interactive, topography-aware predictive maps and local time-series charts.
 
 * **`Model_RegionalTrends.js`**: Exports regionally averaged time series trends to a .csv file.
-
-* **`RAP_Comparison.js`**: Isolates drone-based ground truth data and compares it against the 10m Rangeland Analysis Platform (RAP) by computing Cumulative Distribution Functions (CDFs) to visualize fractional cover distributions.
-
-* **`RAP_Visualization.js`**: Maps the spatial difference (residuals) between the custom SRER predictive model and the 10m RAP product, aggregating monthly predictions into an annual mean and providing an interactive pixel inspector for historical trends.
-
-
 
 ### Data sources
 
