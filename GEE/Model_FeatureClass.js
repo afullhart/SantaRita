@@ -29,7 +29,7 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // ========================================================================= 
 // DYNAMIC DATES (PULLED FROM CLOUD ASSET) 
 // ========================================================================= 
-var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass');
+var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_S2');
 
 // Query the asset for May 2019 
 var may_window = ee.Feature(cloud_windows.filter(ee.Filter.eq('Year', 2019)).filter(ee.Filter.eq('Month', 5)).first());
