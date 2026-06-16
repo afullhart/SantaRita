@@ -22,8 +22,8 @@ var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 // =========================================================================
 var inputProps = ['B2', 'B3', 'B4', 'B5', 'B8', 'B11', 'B12', 'NDVI', 'MCARI', 'BSI', 'NBR2', 'slope', 'illumination', 'aspect'];
 
-// 1. CORE DATASET: Keep all valid points for BGR, LPI, MFT
-var core_training_fc = fc.filter(ee.Filter.notNull(inputProps));
+// 1. CORE DATASET: Keep all valid points for BGR, LPI, MFT, Herb_pct, and Woody_pct
+var core_training_fc = fc.filter(ee.Filter.notNull(inputProps.concat(['Herb_pct', 'Woody_pct'])));
 
 // 2. HWR DATASET: Drop nulls and apply Log Transform specifically for HWR
 var hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Ratio'])).map(function(ft) {
@@ -46,6 +46,10 @@ var model_lpi = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'LPI', inputProperties: inputProps});
 var model_mft = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'MFT', inputProperties: inputProps});
+var model_herb = ee.Classifier.smileGradientTreeBoost(hyperpars)
+  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'Herb_pct', inputProperties: inputProps});
+var model_woody = ee.Classifier.smileGradientTreeBoost(hyperpars)
+  .setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'Woody_pct', inputProperties: inputProps});
 var model_hwr = ee.Classifier.smileGradientTreeBoost(hyperpars)
   .setOutputMode('REGRESSION').train({features: hwr_training_fc, classProperty: 'Log_HWR', inputProperties: inputProps});
 
@@ -134,19 +138,22 @@ var yearLabel = ui.Label('Select Year (2018 - 2025):', {fontWeight: 'bold', back
 var yearSlider = ui.Slider({min: 2018, max: 2025, value: 2019, step: 1, style: {width: '90%'}});
 var monthLabel = ui.Label('Select Month (1 - 12):', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
 var monthSlider = ui.Slider({min: 1, max: 12, value: 5, step: 1, style: {width: '90%'}});
+
+// Added new Absolute Cover Chart Option to Memory Management
+var chartSelectLabel = ui.Label('Select Chart to Render:', {fontWeight: 'bold', backgroundColor: '#f8f9fa', margin: '15px 0 0 0'});
+var chartSelect = ui.Select({
+  items: ['Core Metrics (BGR, LPI, MFT)', 'Absolute Cover (Herb & Woody)', 'Herb-to-Woody Ratio (Log HWR)'],
+  value: 'Core Metrics (BGR, LPI, MFT)',
+  style: {width: '90%'}
+});
+
 var statusLabel = ui.Label('Ready to render.', {color: 'blue', fontWeight: 'bold', margin: '20px 0', backgroundColor: '#f8f9fa'});
 var renderBtn = ui.Button({label: 'Generate Predictive Maps', onClick: updateMap, style: {stretch: 'horizontal', margin: '20px 0 0 0'}});
 var chartPanel = ui.Panel({style: {margin: '20px 0 0 0', backgroundColor: '#f8f9fa'}});
 
-mainPanel.add(title); 
-mainPanel.add(desc); 
-mainPanel.add(yearLabel);
-mainPanel.add(yearSlider); 
-mainPanel.add(monthLabel);
-mainPanel.add(monthSlider); 
-mainPanel.add(renderBtn);
-mainPanel.add(statusLabel); 
-mainPanel.add(chartPanel);
+mainPanel.add(title).add(desc).add(yearLabel).add(yearSlider).add(monthLabel).add(monthSlider);
+mainPanel.add(chartSelectLabel).add(chartSelect); 
+mainPanel.add(renderBtn).add(statusLabel).add(chartPanel);
 
 ui.root.insert(0, mainPanel);
 
@@ -154,6 +161,9 @@ Map.centerObject(bounds_geom, 12);
 Map.setOptions('ROADMAP'); 
 Map.style().set('cursor', 'crosshair');
 
+// =========================================================================
+// MAP RENDERING
+// =========================================================================
 function updateMap() {
   var y = yearSlider.getValue();
   var m = monthSlider.getValue();
@@ -168,15 +178,22 @@ function updateMap() {
   var p_bgr = s2_img.classify(model_bgr).rename('Pred_BGR');
   var p_lpi = s2_img.classify(model_lpi).rename('Pred_LPI');
   var p_mft = s2_img.classify(model_mft).rename('Pred_MFT');
+  var p_herb = s2_img.classify(model_herb).rename('Pred_Herb');
+  var p_woody = s2_img.classify(model_woody).rename('Pred_Woody');
   var p_hwr = s2_img.classify(model_hwr).rename('Pred_Log_HWR');
 
+  // Custom Palettes for Visual Differentiation
   var standardPalette = ['#1a9850', '#91cf60', '#d9ef8b', '#ffffbf', '#fee08b', '#fc8d59', '#d73027'];
   var reversedPalette = ['#d73027', '#fc8d59', '#fee08b', '#ffffbf', '#d9ef8b', '#91cf60', '#1a9850'];
+  var herbPalette = ['#ffffe5', '#f7fcb9', '#d9f0a3', '#addd8e', '#78c679', '#41ab5d', '#238443', '#006837', '#004529'];
+  var woodyPalette = ['#f5f5f5', '#dfc27d', '#bf812d', '#8c510a', '#543005'];
 
   var bgr_draped = drapeHillshade(p_bgr, 0, 75, standardPalette);
   var lpi_draped = drapeHillshade(p_lpi, 0, 80, standardPalette);
   var mft_draped = drapeHillshade(p_mft, 0, 0.5, standardPalette);
-  var hwr_draped = drapeHillshade(p_hwr, 0, 1.5, reversedPalette);
+  var herb_draped = drapeHillshade(p_herb, 0, 80, herbPalette);
+  var woody_draped = drapeHillshade(p_woody, 0, 60, woodyPalette);
+  var hwr_draped = drapeHillshade(p_hwr, 0, 2, reversedPalette);
 
   var markerLayer = null;
   Map.layers().forEach(function(layer) {
@@ -187,6 +204,8 @@ function updateMap() {
   Map.addLayer(hillshade, {min: 0, max: 255}, 'Terrain Hillshade', false);
   Map.addLayer(s2_img, {bands: ['B4', 'B3', 'B2'], min: 0.0, max: 0.3, gamma: 1.4}, 'Sentinel-2 RGB (' + y + '-' + m + ')', false);
   Map.addLayer(hwr_draped, {}, 'Predicted Log HWR (' + y + '-' + m + ')', false);
+  Map.addLayer(woody_draped, {}, 'Predicted Woody Cover (' + y + '-' + m + ')', false);
+  Map.addLayer(herb_draped, {}, 'Predicted Herb Cover (' + y + '-' + m + ')', false);
   Map.addLayer(mft_draped, {}, 'Predicted MFT (' + y + '-' + m + ')', false);
   Map.addLayer(lpi_draped, {}, 'Predicted LPI (' + y + '-' + m + ')', false);
   Map.addLayer(bgr_draped, {}, 'Predicted BGR (' + y + '-' + m + ')');
@@ -206,6 +225,9 @@ function updateMap() {
   });
 }
 
+// =========================================================================
+// INTERACTIVE TIME-SERIES
+// =========================================================================
 Map.onClick(function(coords) {
   var point = ee.Geometry.Point(coords.lon, coords.lat);
   var dot = ui.Map.Layer(point, {color: 'FF0000'}, 'Selected Point');
@@ -219,6 +241,7 @@ Map.onClick(function(coords) {
   Map.layers().add(dot);
 
   statusLabel.setValue('Extracting time-series... please wait.');
+  var selectedChart = chartSelect.getValue(); 
 
   var timeSeriesRaw = cloud_windows.map(function(window) {
     var sDate = ee.String(window.get('Start_Date'));
@@ -240,52 +263,79 @@ Map.onClick(function(coords) {
     .classify({classifier: model_bgr, outputName: 'BGR_pct'})
     .classify({classifier: model_lpi, outputName: 'LPI_pct'})
     .classify({classifier: model_mft, outputName: 'Fetch_m'})
+    .classify({classifier: model_herb, outputName: 'Herb_pct'})
+    .classify({classifier: model_woody, outputName: 'Woody_pct'})
     .classify({classifier: model_hwr, outputName: 'Log_HWR'})
     .sort('system:time_start');
   
-  var chart = ui.Chart.feature.byFeature({
-    features: classifiedTimeSeries,
-    xProperty: 'system:time_start',
-    yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m'] 
-  })
-  .setChartType('LineChart')
-  .setOptions({
-    title: 'Predicted Core Metrics Over Time',
-    hAxis: {title: 'Date', format: 'MMM yyyy'},
-    series: {
-      0: {targetAxisIndex: 0, color: '#d73027', lineWidth: 2, pointSize: 3, labelInLegend: 'BGR (%)'},
-      1: {targetAxisIndex: 0, color: '#fc8d59', lineWidth: 2, pointSize: 3, labelInLegend: 'LPI (%)'},
-      2: {targetAxisIndex: 1, color: '#1a9850', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean Fetch (m)'}
-    },
-    vAxes: {
-      0: {title: 'Percentage (%)'},
-      1: {title: 'Mean Fetch Distance (m)'} 
-    },
-    interpolateNulls: true,
-    backgroundColor: '#f8f9fa'
-  });
+  if (selectedChart === 'Core Metrics (BGR, LPI, MFT)') {
+    var coreChart = ui.Chart.feature.byFeature({
+      features: classifiedTimeSeries,
+      xProperty: 'system:time_start',
+      yProperties: ['BGR_pct', 'LPI_pct', 'Fetch_m'] 
+    })
+    .setChartType('LineChart')
+    .setOptions({
+      title: 'Predicted Core Metrics Over Time',
+      hAxis: {title: 'Date', format: 'MMM yyyy'},
+      series: {
+        0: {targetAxisIndex: 0, color: '#d73027', lineWidth: 2, pointSize: 3, labelInLegend: 'BGR (%)'},
+        1: {targetAxisIndex: 0, color: '#fc8d59', lineWidth: 2, pointSize: 3, labelInLegend: 'LPI (%)'},
+        2: {targetAxisIndex: 1, color: '#1a9850', lineWidth: 2, pointSize: 3, labelInLegend: 'Mean Fetch (m)'}
+      },
+      vAxes: {
+        0: {title: 'Percentage (%)'},
+        1: {title: 'Mean Fetch Distance (m)'} 
+      },
+      interpolateNulls: true,
+      backgroundColor: '#f8f9fa'
+    });
+    chartPanel.clear();
+    chartPanel.add(coreChart);
+    
+  } else if (selectedChart === 'Absolute Cover (Herb & Woody)') {
+    var hwCoverChart = ui.Chart.feature.byFeature({
+      features: classifiedTimeSeries,
+      xProperty: 'system:time_start',
+      yProperties: ['Herb_pct', 'Woody_pct'] 
+    })
+    .setChartType('LineChart')
+    .setOptions({
+      title: 'Predicted Absolute Cover Over Time',
+      hAxis: {title: 'Date', format: 'MMM yyyy'},
+      series: {
+        0: {color: '#91cf60', lineWidth: 2, pointSize: 3, labelInLegend: 'Herbaceous (%)'},
+        1: {color: '#8c510a', lineWidth: 2, pointSize: 3, labelInLegend: 'Woody (%)'}
+      },
+      vAxis: {title: 'Cover Percentage (%)', viewWindow: {min: 0, max: 100}},
+      interpolateNulls: true,
+      backgroundColor: '#f8f9fa'
+    });
+    chartPanel.clear();
+    chartPanel.add(hwCoverChart);
+    
+  } else {
+    var hwrChart = ui.Chart.feature.byFeature({
+      features: classifiedTimeSeries,
+      xProperty: 'system:time_start',
+      yProperties: ['Log_HWR']
+    })
+    .setChartType('LineChart')
+    .setOptions({
+      title: 'Predicted Herb-to-Woody Ratio',
+      hAxis: {title: 'Date', format: 'MMM yyyy'},
+      series: {
+        0: {color: '#4575b4', lineWidth: 2, pointSize: 3, labelInLegend: 'Log HWR'} 
+      },
+      vAxis: {title: 'Log Ratio'},
+      interpolateNulls: true,
+      backgroundColor: '#f8f9fa'
+    });
+    chartPanel.clear();
+    chartPanel.add(hwrChart);
+  }
 
-  var hwrChart = ui.Chart.feature.byFeature({
-    features: classifiedTimeSeries,
-    xProperty: 'system:time_start',
-    yProperties: ['Log_HWR']
-  })
-  .setChartType('LineChart')
-  .setOptions({
-    title: 'Predicted Herb-to-Woody Ratio',
-    hAxis: {title: 'Date', format: 'MMM yyyy'},
-    series: {
-      0: {color: '#4575b4', lineWidth: 2, pointSize: 3, labelInLegend: 'Log HWR'} 
-    },
-    vAxis: {title: 'Log Ratio'},
-    interpolateNulls: true,
-    backgroundColor: '#f8f9fa'
-  });
-
-  chartPanel.clear();
-  chartPanel.add(chart);
-  chartPanel.add(hwrChart);
-  statusLabel.setValue('Time-series charts loaded successfully.');
+  statusLabel.setValue('Time-series chart loaded successfully.');
 });
 
 updateMap();
