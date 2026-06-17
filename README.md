@@ -100,7 +100,7 @@ graph TD
 
 * **`Export_Cloud_FeatureClass.js`**: Scans the complete 40-year (1984-2025) Landsat archive (Landsat 5, 7, 8, and 9) to generate a monthly temporal inventory. It employs a cross-sensor pixel-level median strategy, masks clouds/shadows, and enforces a 20% minimum clear-pixel threshold to build a feature class index of pristine monthly composite windows.
 
-* **`Model_FeatureClass.js`**: Constructs a 30m grid aligned exactly with Landsat, filtering it by spatial overlap with the 5cm high-resolution drone footprints. It extracts 12 Landsat predictor variables (surface reflectance bands, NDVI, BSI, NBR2, slope, aspect, and illumination) and computes 6 exact structural ground truth metrics (BGR, LPI, MFT, absolute Herbaceous and Woody percentages, and the Log Herb-to-Woody Ratio) to create the master training dataset.
+* **`Model_FeatureClass.js`**: Constructs a 30m grid aligned exactly with Landsat, filtering it by spatial overlap with the 5cm high-resolution drone footprints. It extracts 12 Landsat predictor variables (surface reflectance bands, NDVI, BSI, NBR2, slope, aspect, and illumination) and computes 6 exact structural ground truth metrics (BGR, LPI, MFT, absolute Herbaceous and Woody percentages, and the Log Herb-to-Woody Ratio) to create the master training dataset. Takes 15-30 min.
 
 * **`Model_Regressions.js`**: Ingests the master 30m training feature class to construct and evaluate six distinct Gradient Tree Boost regression models. It executes K-folds (K=5) cross-validation, evaluates Root Mean Square Error (RMSE) for both testing and training phases, and exports a comprehensive CSV containing predicted vs. true values for all metrics to facilitate scatter plot generation and $R^2$ validation.
 
