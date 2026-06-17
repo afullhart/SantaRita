@@ -120,11 +120,11 @@ graph TD
 
 * **`Landsat 5 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2
 
-* **`Landsat 7 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT07_C02_T1_L2
+* **`Landsat 7 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LE07_C02_T1_L2
 
-* **`Landsat 8 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT08_C02_T1_L2 
+* **`Landsat 8 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC08_C02_T1_L2 
 
-* **`Landsat 9 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT09_C02_T1_L2
+* **`Landsat 9 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LC09_C02_T1_L2
 
 * **`Export_30m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
 
