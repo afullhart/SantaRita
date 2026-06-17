@@ -108,7 +108,7 @@ graph TD
 
 * **`Model_RegionalTrends.js`**: Iterates through the 40-year cloud-free monthly index, classifying each Landsat composite and applying an exact 30m spatial mean reduction across the entire SRER boundary. It exports the regionally averaged time-series data for all six metrics to a CSV for long-term Python-based ecological trend analysis.
 
-* **`Export_Maps.ipynb`**: Iterates through the 40-year cloud-free monthly index, classifying each Landsat composite and applying an 30m spatial predictions across the entire SRER boundary. Submits batch export tasks directly to Google Drive. It stacks all 6 predictions (BGR, LPI, MFT, Herb, Woody, and Log HWR) into one multi-band 30m GeoTIFF per month.
+* **`Export_Maps.ipynb`**: Iterates through the 40-year cloud-free monthly index, classifying each Landsat composite and applying an 30m spatial predictions across the entire SRER boundary. Submits batch export tasks directly to Google Drive. It stacks all 6 predictions (BGR, LPI, MFT, Herb, Woody, and Log HWR) into one multi-band 30m GeoTIFF per month. Takes 4-5 hrs.
 
 ### Data sources
 
