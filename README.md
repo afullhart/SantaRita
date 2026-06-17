@@ -118,7 +118,13 @@ graph TD
 
 * **`Ecological Survey Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
 
-* **`30m Landsat Images`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+* **`Landsat 5 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT05_C02_T1_L2
+
+* **`Landsat 7 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT07_C02_T1_L2
+
+* **`Landsat 8 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT08_C02_T1_L2 
+
+* **`Landsat 9 Images`**: https://developers.google.com/earth-engine/datasets/catalog/LANDSAT_LT09_C02_T1_L2
 
 * **`Export_30m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
 
