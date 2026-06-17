@@ -14,17 +14,17 @@ graph TD
     I1["5cm Classified Images"]
     I2["Drone Image Footprints"]
     I3["Ecological Survey Footprints"]
-    I4["10m Sentinel-2 Images"]
+    I4["30m Landsat Archive (1984-2025)"]
     I5["SRER Footprint"]
     
     %% Script-based pre-processing inputs
-    S1["Export_10m_DEM.js"]
+    S1["Export_30m_DEM.js"]
     S2["Export_Cloud_FeatureClass.js"]
   end
 
   %% --- LEVEL 2: PRE-PROCESSING & INTERMEDIATE PRODUCTS ---
   subgraph PreProcessing [Pre-Processing & Derived Features]
-    P1["10m USGS Resampled DEM"]
+    P1["30m USGS Resampled DEM"]
     P2["Cloud-Free Feature Class"]
   end
 
@@ -44,6 +44,7 @@ graph TD
     O1["Model_Regressions.js"]
     O2["Model_Visualization.js"]
     O5["Model_RegionalTrends.js"]
+    O6["Cloud_Visualization.js"]
   end
 
   %% --- FLOW CONNECTIONS ---
@@ -79,12 +80,13 @@ graph TD
   J2 --> O1
   J2 --> O2
   J2 --> O5
+  J2 --> O6
 
   %% Assigning Classes for Visual Distinction
   class I1,I2,I3,I4,I5 input;
   class P1,P2,T1 intermediate;
   class S1,S2,S3 script;
-  class O1,O2,O5 output;
+  class O1,O2,O5,O6 output;
 ```
 
 ### Scripts
