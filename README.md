@@ -91,17 +91,17 @@ graph TD
 
 ### Scripts
 
-* **`Export_10m_DEM.js`**: Resamples the high-resolution 1m USGS 3DEP Digital Elevation Model to a 10m spatial resolution using a true spatial mean reduction to avoid aliasing errors, and exports it as a stripe-free asset.
+* **`Export_30m_DEM.js`**: Resamples the high-resolution 1m USGS 3DEP Digital Elevation Model to a 30m spatial resolution using a true spatial mean reduction (averaging 900 native pixels per output pixel). This avoids aliasing errors and ensures perfect grid alignment with the native Landsat scale for downstream topographic metrics.
 
-* **`Export_Cloud_FeatureClass.js`**: Scans the 2018-2025 Sentinel-2 Harmonized record to locate the optimal 7-day imagery windows for each month based on a custom "True Obscuration" metric, exporting a feature class asset of the clearest dates.
+* **`Export_Cloud_FeatureClass.js`**: Scans the complete 40-year (1984-2025) Landsat archive (Landsat 5, 7, 8, and 9) to generate a monthly temporal inventory. It employs a cross-sensor pixel-level median strategy, masks clouds/shadows, and enforces a 20% minimum clear-pixel threshold to build a feature class index of pristine monthly composite windows.
 
-* **`Model_FeatureClass.js`**: Generates 10m Sentinel-2 grid feature class asset that is filtered by spatial overlap with footprints. Adds BGR, LPI, and MFT. Adds Sentinel-2 band values. Adds NDVI, MCARI, BSI, and NBR2. Adds slope, aspect, and illumination based on resampled 10m USGS DEM.
+* **`Model_FeatureClass.js`**: Constructs a 30m grid aligned exactly with Landsat, filtering it by spatial overlap with the 5cm high-resolution drone footprints. It extracts 12 Landsat predictor variables (surface reflectance bands, NDVI, BSI, NBR2, slope, aspect, and illumination) and computes 6 exact structural ground truth metrics (BGR, LPI, MFT, absolute Herbaceous and Woody percentages, and the Log Herb-to-Woody Ratio) to create the master training dataset.
 
-* **`Model_Regressions.js`**: Executes K-folds cross-validation and final models, visualizes prediction map, and exports predicted vs. true values.
+* **`Model_Regressions.js`**: Ingests the master 30m training feature class to construct and evaluate six distinct Gradient Tree Boost regression models. It executes K-folds (K=5) cross-validation, evaluates Root Mean Square Error (RMSE) for both testing and training phases, and exports a comprehensive CSV containing predicted vs. true values for all metrics to facilitate scatter plot generation and $R^2$ validation.
 
-* **`Model_Visualization.js`**: Loads the tuned Gradient Tree Boost models, resampled DEM, and optimal cloud windows to dynamically generate interactive, topography-aware predictive maps and local time-series charts.
+* **`Model_Visualization.js`**: A fully interactive UI application that trains the Gradient Tree Boost models on load and applies them to historical Landsat composites on the fly. It renders dynamic, topography-draped 30m predictive maps (with custom color palettes for herbaceous and woody layers) and allows users to click anywhere on the landscape to extract and visualize 40-year local time-series charts.
 
-* **`Model_RegionalTrends.js`**: Exports regionally averaged time series trends to a .csv file.
+* **`Model_RegionalTrends.js`**: Iterates through the 40-year cloud-free monthly index, classifying each Landsat composite and applying an exact 30m spatial mean reduction across the entire SRER boundary. It exports the regionally averaged time-series data for all six metrics to a CSV for long-term Python-based ecological trend analysis.
 
 ### Data sources
 
@@ -111,9 +111,9 @@ graph TD
 
 * **`Ecological Survey Footprints`**: https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83
 
-* **`10m Sentinel-2 Images`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
+* **`30m Landsat Images`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
 
-* **`Export_10m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
+* **`Export_30m_DEM.js`**: https://developers.google.com/earth-engine/datasets/catalog/USGS_3DEP_1m
 
 * **`Export_Cloud_FeatureClass.js`**: https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR_HARMONIZED
 
