@@ -9,9 +9,16 @@ import multiprocessing
 # USER INPUTS
 # ====================================================================
 out_gdb = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb'
-output_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m')
-output_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
-output_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
+
+# --- INPUT FOOTPRINTS ---
+in_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m')
+in_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
+in_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
+
+# --- OUTPUT FEATURE CLASSES ---
+out_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m_Random')
+out_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m_Random')
+out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_Random')
 
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
@@ -72,7 +79,7 @@ def process_grid_cell(data_packet):
     dist_array = distance_transform_edt(is_bare) * c_size
     mean_fetch_exact = np.mean(dist_array[mask]) if is_circle else np.mean(dist_array)
 
-    # --- HERB-TO-WOODY EXACT RATIO ---
+    # --- HERB-TO-WOODY EXACT RATIO & COVER PCT ---
     if is_circle:
       herb_px = np.sum((main_array == herb_value) & mask)
       woody_px = np.sum((main_array == woody_value) & mask)
@@ -80,6 +87,8 @@ def process_grid_cell(data_packet):
       herb_px = np.sum(main_array == herb_value)
       woody_px = np.sum(main_array == woody_value)
 
+    herb_pct_exact = (float(herb_px) / float(total_pixels)) * 100
+    woody_pct_exact = (float(woody_px) / float(total_pixels)) * 100
     hw_ratio_exact = (float(herb_px) / float(woody_px)) if woody_px > 0 else None
 
     horizontal_transects = [main_array[i, :] for i in range(nrows)]
@@ -108,7 +117,11 @@ def process_grid_cell(data_packet):
     else:
       f_0_24 = f_25_50 = f_51_100 = f_101_200 = f_gt_200 = 0.0
 
-    output_metrics = [bgr_percent, lpi_percent, mean_fetch_exact, hw_ratio_exact, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
+    output_metrics = [
+        bgr_percent, lpi_percent, mean_fetch_exact, hw_ratio_exact, 
+        herb_pct_exact, woody_pct_exact,
+        f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200
+    ]
 
     # ==========================================
     # 2. RANDOM POINT UNDERSAMPLING 
@@ -116,7 +129,6 @@ def process_grid_cell(data_packet):
     valid_bare = is_bare[mask]
     valid_fetch = dist_array[mask]
     
-    # Establish valid herb/woody matrices for random sampling
     if is_circle:
       valid_herb = (main_array == herb_value)[mask]
       valid_woody = (main_array == woody_value)[mask]
@@ -128,21 +140,22 @@ def process_grid_cell(data_packet):
 
     for n_pts in PT_INCS:
       if num_valid_pts == 0:
-        output_metrics.extend([0.0, 0.0, None])
+        output_metrics.extend([0.0, 0.0, None, 0.0, 0.0])
         continue
       
       idx = np.random.choice(num_valid_pts, size=n_pts, replace=True)
       
-      # Sample BGR & Fetch
       smpl_bgr = (np.sum(valid_bare[idx]) / n_pts) * 100
       smpl_fetch = np.mean(valid_fetch[idx])
       
-      # Sample Herb & Woody to calculate ratio
       smpl_herb_count = np.sum(valid_herb[idx])
       smpl_woody_count = np.sum(valid_woody[idx])
-      smpl_hw_ratio = (float(smpl_herb_count) / float(smpl_woody_count)) if smpl_woody_count > 0 else None
       
-      output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio])
+      smpl_hw_ratio = (float(smpl_herb_count) / float(smpl_woody_count)) if smpl_woody_count > 0 else None
+      smpl_herb_pct = (float(smpl_herb_count) / n_pts) * 100
+      smpl_woody_pct = (float(smpl_woody_count) / n_pts) * 100
+      
+      output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio, smpl_herb_pct, smpl_woody_pct])
 
     # ==========================================
     # 3. VIRTUAL TRANSECT UNDERSAMPLING (GAP)
@@ -211,14 +224,15 @@ def process_grid_cell(data_packet):
 # ====================================================================
 # EXECUTION LOGIC
 # ====================================================================
-def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
-  fc_name = os.path.basename(target_fc)
+def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
+  fc_name = os.path.basename(out_fc)
   print(f'\n--- Processing 2X Seasonal Metrics & Undersampling for {fc_name} ---')
 
   shapes_dict = {}
   tasks = []
   
-  with arcpy.da.SearchCursor(target_fc, ['OID@', 'SHAPE@']) as cursor:
+  # Note: Reading geometries from in_fc
+  with arcpy.da.SearchCursor(in_fc, ['OID@', 'SHAPE@']) as cursor:
     for oid, geom in cursor:
       shapes_dict[oid] = geom
       ext = geom.extent
@@ -244,8 +258,10 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
       if count % 1000 == 0:
         print(f'  -> Processed {count} / {total_tasks} tasks...')
 
-  print('  -> Constructing final feature class with all simulation fields...')
-  sr = arcpy.Describe(target_fc).spatialReference
+  print('  -> Constructing final feature class with all random fields...')
+  
+  # Pull spatial reference from input
+  sr = arcpy.Describe(in_fc).spatialReference
   temp_out = r'memory\temp_metrics_fc'
   
   if arcpy.Exists(temp_out):
@@ -257,13 +273,13 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
   
   # 1. Exact Fields
   new_fields = [
-    'BGR_Exact', 'LPI_Exact', 'Fetch_Exact', 'HW_Ratio_Exact',
+    'BGR_Exact', 'LPI_Exact', 'Fetch_Exact', 'HW_Ratio_Exact', 'Herb_Pct_Exact', 'Woody_Pct_Exact',
     'Gap_0_24_Exact', 'Gap_25_50_Exact', 'Gap_51_100_Exact', 'Gap_101_200_Exact', 'Gap_gt_200_Exact'
   ]
   
-  # 2. Point Increment Fields (Now includes HW_Ratio_pt)
+  # 2. Point Increment Fields
   for pt in PT_INCS:
-    new_fields.extend([f'BGR_pt_{pt}', f'Fetch_pt_{pt}', f'HW_Ratio_pt_{pt}'])
+    new_fields.extend([f'BGR_pt_{pt}', f'Fetch_pt_{pt}', f'HW_Ratio_pt_{pt}', f'Herb_Pct_pt_{pt}', f'Woody_Pct_pt_{pt}'])
     
   # 3. Line Increment Fields
   for ln in LN_INCS:
@@ -282,10 +298,11 @@ def calculate_metrics_for_fc(target_fc, cell_size, is_circle=False):
       row_data = [geom, season] + metrics
       icursor.insertRow(row_data)
 
-  arcpy.management.CopyFeatures(temp_out, target_fc)
+  # Copy features to the NEW specified output location
+  arcpy.management.CopyFeatures(temp_out, out_fc)
   arcpy.management.Delete(temp_out)
   
-  print(f'  -> Successfully updated {fc_name}!')
+  print(f'  -> Successfully created and updated {fc_name}!')
 
 if __name__ == '__main__':
   arcpy.ResetEnvironments() 
@@ -295,38 +312,33 @@ if __name__ == '__main__':
   pixel_size = float(arcpy.management.GetRasterProperties(may_tiff, 'CELLSIZEX').getOutput(0))
   print(f'Detected pixel size: {pixel_size}m')
 
-  calculate_metrics_for_fc(output_grid_10m, pixel_size, is_circle=False)
-  calculate_metrics_for_fc(output_grid_30m, pixel_size, is_circle=False)
-  calculate_metrics_for_fc(output_nri_plots, pixel_size, is_circle=True)
+  calculate_metrics_for_fc(in_grid_10m, out_grid_10m, pixel_size, is_circle=False)
+  calculate_metrics_for_fc(in_grid_30m, out_grid_30m, pixel_size, is_circle=False)
+  calculate_metrics_for_fc(in_nri_plots, out_nri_plots, pixel_size, is_circle=True)
 
-  print('\nAll Extracted Metrics & Simulations Processing Complete!')
+  print('\nAll Extracted Metrics & Random Processing Complete!')
 
   csv_out_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
-
-  output_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
-  output_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
-  output_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m')
 
   print('\n--- Exporting Tables to CSV ---')
 
   export_tasks = {
-    output_grid_10m: 'SRER_Grid_10m_Metrics.csv',
-    output_grid_30m: 'SRER_Grid_30m_Metrics.csv',
-    output_nri_plots: 'SRER_NRI_Plots_110m_Metrics.csv'
+    out_grid_10m: 'SRER_Grid_10m_Random.csv',
+    out_grid_30m: 'SRER_Grid_30m_Random.csv',
+    out_nri_plots: 'SRER_NRI_Plots_110m_Random.csv'
   }
 
-  for fc, csv_name in export_tasks.items():
+  for fc_path, csv_name in export_tasks.items():
     out_csv_path = os.path.join(csv_out_folder, csv_name)
     
     if arcpy.Exists(out_csv_path):
       arcpy.management.Delete(out_csv_path)
       
-    print(f'  -> Exporting {os.path.basename(fc)} to {csv_name}...')
+    print(f'  -> Exporting {os.path.basename(fc_path)} to {csv_name}...')
     
     arcpy.conversion.ExportTable(
-      in_table=fc,
+      in_table=fc_path,
       out_table=out_csv_path
     )
 
   print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
-  
