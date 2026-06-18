@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 import os
 
 data_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
-out_folder = r'C:\Users\andre\ScatterPlots'
+out_folder = r'C:\Users\andre\ScatterPlots\Random_Sampling'
 
 csv_files = {
-  '10m_Grid': 'SRER_Grid_10m_Metrics.csv',
-  '30m_Grid': 'SRER_Grid_30m_Metrics.csv',
-  '110m_NRI': 'SRER_NRI_Plots_110m_Metrics.csv'
+  '10m_Grid': 'SRER_Grid_10m_Random.csv',
+  '30m_Grid': 'SRER_Grid_30m_Random.csv',
+  '110m_NRI': 'SRER_NRI_Plots_110m_Random.csv'
 }
 
 # --- HELPER FUNCTION FOR PLOTTING ---
