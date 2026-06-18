@@ -170,6 +170,16 @@ def process_polygon(task):
     nri_bgr_50cm = (float(spoke_bgr_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
     nri_bgr_100cm = (float(spoke_bgr_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
 
+    # NEW: Calculate Individual Herb & Woody NRI Percentages
+    nri_herb_0cm = (float(spoke_herb_pixels) / (len(distances) * 3)) * 100
+    nri_woody_0cm = (float(spoke_woody_pixels) / (len(distances) * 3)) * 100
+    
+    nri_herb_50cm = (float(spoke_herb_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
+    nri_woody_50cm = (float(spoke_woody_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
+    
+    nri_herb_100cm = (float(spoke_herb_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
+    nri_woody_100cm = (float(spoke_woody_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
+
     nri_hw_0cm = (float(spoke_herb_pixels) / float(spoke_woody_pixels)) if spoke_woody_pixels > 0 else None
     nri_hw_50cm = (float(spoke_herb_pixels_50cm) / float(spoke_woody_pixels_50cm)) if spoke_woody_pixels_50cm > 0 else None
     nri_hw_100cm = (float(spoke_herb_pixels_100cm) / float(spoke_woody_pixels_100cm)) if spoke_woody_pixels_100cm > 0 else None
@@ -193,6 +203,8 @@ def process_polygon(task):
       exact_herb_pct, exact_woody_pct,
       ex_0_24, ex_25_50, ex_51_100, ex_101_200, ex_gt_200, ex_total,
       nri_bgr, nri_bgr_50cm, nri_bgr_100cm,
+      nri_herb_0cm, nri_herb_50cm, nri_herb_100cm,
+      nri_woody_0cm, nri_woody_50cm, nri_woody_100cm,
       nri_hw_0cm, nri_hw_50cm, nri_hw_100cm,
       nri_fetch_50cm, nri_fetch_100cm,
       nri_0_24, nri_25_50, nri_51_100, nri_101_200, nri_gt_200, nri_total
@@ -234,6 +246,8 @@ if __name__ == '__main__':
       'Exact_Herb_Pct', 'Exact_Woody_Pct',
       'Exact_Gap_0_24', 'Exact_Gap_25_50', 'Exact_Gap_51_100', 'Exact_Gap_101_200', 'Exact_Gap_gt_200', 'ExactTotal_Gap',
       'NRI_BGR_0cm_Pct', 'NRI_BGR_50cm_Pct', 'NRI_BGR_100cm_Pct',
+      'NRI_Herb_0cm_Pct', 'NRI_Herb_50cm_Pct', 'NRI_Herb_100cm_Pct',
+      'NRI_Woody_0cm_Pct', 'NRI_Woody_50cm_Pct', 'NRI_Woody_100cm_Pct',
       'NRI_HW_Ratio_0cm', 'NRI_HW_Ratio_50cm', 'NRI_HW_Ratio_100cm',
       'NRI_Fetch_50cm', 'NRI_Fetch_100cm',
       'NRI_Gap_0_24', 'NRI_Gap_25_50', 'NRI_Gap_51_100', 'NRI_Gap_101_200', 'NRI_Gap_gt_200', 'NRI_Total_Gap'
@@ -307,3 +321,4 @@ if __name__ == '__main__':
   arcpy.CheckInExtension('Spatial')
   print('\n========================================================')
   print('ALL PROCESSING COMPLETE.')
+  
