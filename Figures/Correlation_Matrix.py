@@ -17,7 +17,7 @@ df = pd.read_csv(csv_path)
 # ====================================================================
 # VARIABLE SELECTION & LABELING
 # ====================================================================
-# The exact metric columns from your raw dataset
+# The exact metric columns from your raw dataset (Herb/Woody moved to end)
 target_cols = [
     'Exact_BGR_Pct', 
     'Exact_Fetch_m', 
@@ -26,11 +26,13 @@ target_cols = [
     'Exact_Gap_25_50', 
     'Exact_Gap_51_100',
     'Exact_Gap_101_200', 
-    'Exact_Gap_gt_200', 
+    'Exact_Gap_gt_200',
+    'Exact_Herb_Pct', 
+    'Exact_Woody_Pct', 
     'Exact_Herb_Woody_Ratio'
 ]
 
-# Clean labels for the plot axes
+# Clean labels for the plot axes (Herb/Woody moved to end)
 clean_labels = [
     'Bare Ground %', 
     'Mean Fetch (m)', 
@@ -39,7 +41,9 @@ clean_labels = [
     'Gap 25-50 cm', 
     'Gap 51-100 cm',
     'Gap 101-200 cm', 
-    'Gap > 200 cm', 
+    'Gap > 200 cm',
+    'Herb Cover %', 
+    'Woody Cover %', 
     'Herb:Woody Ratio'
 ]
 
@@ -74,7 +78,7 @@ np.fill_diagonal(corr_combined, np.nan)
 corr_combined_df = pd.DataFrame(corr_combined, index=corr_pearson.index, columns=corr_pearson.columns)
 
 # Set up the matplotlib figure
-fig, ax = plt.subplots(figsize=(13, 11))
+fig, ax = plt.subplots(figsize=(14, 12))
 
 # Paint the background of the axes black to highlight the diagonal separation
 ax.set_facecolor('black')
