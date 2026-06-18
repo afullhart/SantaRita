@@ -48,7 +48,7 @@ graph TD
   end
 
   subgraph Export [Export]
-    O7["Export_Maps.js"]
+    O7["Export_Maps.ipynb"]
   end
 
   %% --- FLOW CONNECTIONS ---
