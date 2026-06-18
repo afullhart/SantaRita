@@ -57,8 +57,10 @@ for scale_name, csv_filename in csv_files.items():
   ln_cols = [c for c in df.columns if c.startswith('Gap_0_24_L_')]
   lines = sorted([int(c.split('_')[-1]) for c in ln_cols])
 
-  # 2. Calculate errors for BGR, Fetch, and Herb-to-Woody Ratio
+  # 2. Calculate errors for BGR, Herb, Woody, Fetch, and Herb-to-Woody Ratio
   bgr_mae, bgr_rel = [], []
+  herb_mae, herb_rel = [], []
+  woody_mae, woody_rel = [], []
   fetch_mae, fetch_rel = [], []
   hw_mae, hw_rel = [], []
 
@@ -68,6 +70,24 @@ for scale_name, csv_filename in csv_files.items():
     bgr_mae.append(np.abs(df[b_col] - df['BGR_Exact']).mean())
     bgr_rel.append((np.abs(df[b_col] - df['BGR_Exact']) / (df['BGR_Exact'] + 1e-6) * 100).mean())
     
+    # Herb Pct
+    h_col = f'Herb_Pct_pt_{pt}'
+    if h_col in df.columns and 'Herb_Pct_Exact' in df.columns:
+      herb_mae.append(np.abs(df[h_col] - df['Herb_Pct_Exact']).mean())
+      herb_rel.append((np.abs(df[h_col] - df['Herb_Pct_Exact']) / (df['Herb_Pct_Exact'] + 1e-6) * 100).mean())
+    else:
+      herb_mae.append(np.nan)
+      herb_rel.append(np.nan)
+
+    # Woody Pct
+    w_col = f'Woody_Pct_pt_{pt}'
+    if w_col in df.columns and 'Woody_Pct_Exact' in df.columns:
+      woody_mae.append(np.abs(df[w_col] - df['Woody_Pct_Exact']).mean())
+      woody_rel.append((np.abs(df[w_col] - df['Woody_Pct_Exact']) / (df['Woody_Pct_Exact'] + 1e-6) * 100).mean())
+    else:
+      woody_mae.append(np.nan)
+      woody_rel.append(np.nan)
+
     # Fetch
     f_col = f'Fetch_pt_{pt}'
     fetch_mae.append(np.abs(df[f_col] - df['Fetch_Exact']).mean())
@@ -103,24 +123,31 @@ for scale_name, csv_filename in csv_files.items():
       
     gap_data[cat] = {'title': title, 'mae': g_mae, 'rel': g_rel}
 
-  # 4. Generate the 8-Subplot Figure
-  # Increased figure size to safely house 8 plots without squishing
-  fig, axes = plt.subplots(nrows=8, ncols=1, figsize=(12, 40))
+  # 4. Generate the 10-Subplot Figure
+  fig, axes = plt.subplots(nrows=10, ncols=1, figsize=(12, 50))
 
   # Plot 1: BGR
   plot_dual_axis(axes[0], points, bgr_mae, bgr_rel, 
                  'Bare Ground Percentage', 'Number of Randomly Sampled Points (Log Scale)', 'Absolute Error (pp)')
   
-  # Plot 2: Fetch
-  plot_dual_axis(axes[1], points, fetch_mae, fetch_rel, 
+  # Plot 2: Herb Cover Percentage
+  plot_dual_axis(axes[1], points, herb_mae, herb_rel, 
+                 'Herb Cover Percentage', 'Number of Randomly Sampled Points (Log Scale)', 'Absolute Error (pp)')
+
+  # Plot 3: Woody Cover Percentage
+  plot_dual_axis(axes[2], points, woody_mae, woody_rel, 
+                 'Woody Cover Percentage', 'Number of Randomly Sampled Points (Log Scale)', 'Absolute Error (pp)')
+  
+  # Plot 4: Fetch
+  plot_dual_axis(axes[3], points, fetch_mae, fetch_rel, 
                  'Mean Fetch', 'Number of Randomly Sampled Points (Log Scale)', 'Absolute Error (m)')
 
-  # Plot 3: Herb-to-Woody Ratio
-  plot_dual_axis(axes[2], points, hw_mae, hw_rel, 
+  # Plot 5: Herb-to-Woody Ratio
+  plot_dual_axis(axes[4], points, hw_mae, hw_rel, 
                  'Herb-to-Woody Ratio', 'Number of Randomly Sampled Points (Log Scale)', 'Absolute Error (Ratio)')
 
-  # Plots 4-8: Canopy Gaps (Shifted index start to 3)
-  ax_idx = 3
+  # Plots 6-10: Canopy Gaps
+  ax_idx = 5
   for cat in gap_cats.keys():
     plot_dual_axis(axes[ax_idx], lines, gap_data[cat]['mae'], gap_data[cat]['rel'], 
                    gap_data[cat]['title'], 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
@@ -137,6 +164,6 @@ for scale_name, csv_filename in csv_files.items():
   plt.savefig(output_img_path, dpi=300)
   plt.close() 
   
-  print(f"Saved comprehensive 8-plot figure to: {output_img_path}")
+  print(f"Saved comprehensive 10-plot figure to: {output_img_path}")
 
 print("\nAll comprehensive plotting complete!")
