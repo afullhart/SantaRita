@@ -19,7 +19,7 @@ os.makedirs(exact_dir, exist_ok=True)
 os.makedirs(sampled_dir, exist_ok=True)
 
 # Read the uploaded CSV
-df = pd.read_csv(r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots.csv')
+df = pd.read_csv(r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots_110m.csv')
 
 # ====================================================================
 # PAIR DEFINITIONS
@@ -29,11 +29,22 @@ pairs = [
   ('Exact_BGR_Pct', 'NRI_BGR_0cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_50cm_Pct'),
   ('Exact_BGR_Pct', 'NRI_BGR_100cm_Pct'),
+  
+  ('Exact_Herb_Pct', 'NRI_Herb_0cm_Pct'),
+  ('Exact_Herb_Pct', 'NRI_Herb_50cm_Pct'),
+  ('Exact_Herb_Pct', 'NRI_Herb_100cm_Pct'),
+  
+  ('Exact_Woody_Pct', 'NRI_Woody_0cm_Pct'),
+  ('Exact_Woody_Pct', 'NRI_Woody_50cm_Pct'),
+  ('Exact_Woody_Pct', 'NRI_Woody_100cm_Pct'),
+
   ('Exact_Fetch_m', 'NRI_Fetch_50cm'),
   ('Exact_Fetch_m', 'NRI_Fetch_100cm'),
+  
   ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_0cm'),
   ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_50cm'),
   ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_100cm'),
+  
   ('Exact_Gap_0_24', 'NRI_Gap_0_24'),
   ('Exact_Gap_25_50', 'NRI_Gap_25_50'),
   ('Exact_Gap_51_100', 'NRI_Gap_51_100'),
@@ -84,7 +95,34 @@ pairs = [
   ('Exact_Gap_101_200', 'Exact_Gap_gt_200'),
   ('Exact_Gap_101_200', 'Exact_Herb_Woody_Ratio'),
 
-  ('Exact_Gap_gt_200', 'Exact_Herb_Woody_Ratio')
+  ('Exact_Gap_gt_200', 'Exact_Herb_Woody_Ratio'),
+
+  # --- Herb & Woody Percentages ---
+  ('Exact_Herb_Pct', 'Exact_Woody_Pct'),
+  
+  ('Exact_BGR_Pct', 'Exact_Herb_Pct'),
+  ('Exact_BGR_Pct', 'Exact_Woody_Pct'),
+  
+  ('Exact_Fetch_m', 'Exact_Herb_Pct'),
+  ('Exact_Fetch_m', 'Exact_Woody_Pct'),
+  
+  ('Exact_LPI_Pct', 'Exact_Herb_Pct'),
+  ('Exact_LPI_Pct', 'Exact_Woody_Pct'),
+  
+  ('Exact_Herb_Pct', 'Exact_Herb_Woody_Ratio'),
+  ('Exact_Woody_Pct', 'Exact_Herb_Woody_Ratio'),
+  
+  ('Exact_Gap_0_24', 'Exact_Herb_Pct'),
+  ('Exact_Gap_25_50', 'Exact_Herb_Pct'),
+  ('Exact_Gap_51_100', 'Exact_Herb_Pct'),
+  ('Exact_Gap_101_200', 'Exact_Herb_Pct'),
+  ('Exact_Gap_gt_200', 'Exact_Herb_Pct'),
+  
+  ('Exact_Gap_0_24', 'Exact_Woody_Pct'),
+  ('Exact_Gap_25_50', 'Exact_Woody_Pct'),
+  ('Exact_Gap_51_100', 'Exact_Woody_Pct'),
+  ('Exact_Gap_101_200', 'Exact_Woody_Pct'),
+  ('Exact_Gap_gt_200', 'Exact_Woody_Pct')
 ]
 
 # Lists to store metrics for the CSV outputs
@@ -96,6 +134,12 @@ exact_metrics = []
 # ====================================================================
 for i, (x_col, y_col) in enumerate(pairs):
   plt.figure(figsize=(8, 6))
+  
+  # Check if columns exist before plotting
+  if x_col not in df.columns or y_col not in df.columns:
+    print(f"Skipping plot: Columns {x_col} or {y_col} not found in the dataset.")
+    plt.close()
+    continue
   
   # Drop missing values and sort by X to ensure continuous fill boundaries
   # This perfectly handles our undefined Herb-to-Woody ratios (0 woody pixels)
