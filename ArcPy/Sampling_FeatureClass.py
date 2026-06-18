@@ -79,9 +79,11 @@ def process_polygon(task):
     else:
       exact_lpi = 0.0
 
-    # HERB-TO-WOODY
+    # HERB-TO-WOODY & COVER PCT
     herb_pixels = np.sum(main_array[valid_mask] == herb_value)
     woody_pixels = np.sum(main_array[valid_mask] == woody_value)
+    exact_herb_pct = (float(herb_pixels) / float(total_valid_pixels)) * 100
+    exact_woody_pct = (float(woody_pixels) / float(total_valid_pixels)) * 100
     exact_herb_woody = (float(herb_pixels) / float(woody_pixels)) if woody_pixels > 0 else None
 
     # FETCH (EucDistance Alternative)
@@ -187,7 +189,8 @@ def process_polygon(task):
     nri_total = nri_0_24 + nri_25_50 + nri_51_100 + nri_101_200 + nri_gt_200
 
     results = [
-      exact_bgr, exact_lpi, exact_fetch, exact_herb_woody,
+      exact_bgr, exact_lpi, exact_fetch, exact_herb_woody, 
+      exact_herb_pct, exact_woody_pct,
       ex_0_24, ex_25_50, ex_51_100, ex_101_200, ex_gt_200, ex_total,
       nri_bgr, nri_bgr_50cm, nri_bgr_100cm,
       nri_hw_0cm, nri_hw_50cm, nri_hw_100cm,
@@ -227,7 +230,8 @@ if __name__ == '__main__':
 
     # 2. Add Metric Fields
     new_fields = [
-      'Exact_BGR_Pct', 'Exact_LPI_Pct', 'Exact_Fetch_m', 'Exact_Herb_Woody_Ratio', 
+      'Exact_BGR_Pct', 'Exact_LPI_Pct', 'Exact_Fetch_m', 'Exact_Herb_Woody_Ratio',
+      'Exact_Herb_Pct', 'Exact_Woody_Pct',
       'Exact_Gap_0_24', 'Exact_Gap_25_50', 'Exact_Gap_51_100', 'Exact_Gap_101_200', 'Exact_Gap_gt_200', 'ExactTotal_Gap',
       'NRI_BGR_0cm_Pct', 'NRI_BGR_50cm_Pct', 'NRI_BGR_100cm_Pct',
       'NRI_HW_Ratio_0cm', 'NRI_HW_Ratio_50cm', 'NRI_HW_Ratio_100cm',
