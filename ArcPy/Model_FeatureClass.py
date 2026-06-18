@@ -44,9 +44,13 @@ def process_grid_cell(data_packet):
       return oid, None
 
     is_bare = (main_array == target_value)
+    is_herb = (main_array == herb_value)
+    is_woody = (main_array == woody_value)
 
-    # --- 1. BGR ---
+    # --- 1. BGR, Herb, and Woody Cover Percentages ---
     bgr_percent = (np.sum(is_bare) / total_pixels) * 100
+    herb_percent = (np.sum(is_herb) / total_pixels) * 100
+    woody_percent = (np.sum(is_woody) / total_pixels) * 100
 
     # --- 2. LPI ---
     # FIX: Force 8-connectivity to match Earth Engine's "eightConnected: true"
@@ -68,8 +72,8 @@ def process_grid_cell(data_packet):
     mean_fetch_exact = np.mean(dist_array)
 
     # --- 4. HERB-TO-WOODY RATIO ---
-    herb_pixels = np.sum(main_array == herb_value)
-    woody_pixels = np.sum(main_array == woody_value)
+    herb_pixels = np.sum(is_herb)
+    woody_pixels = np.sum(is_woody)
     herb_woody_ratio = (float(herb_pixels) / float(woody_pixels)) if woody_pixels > 0 else None
 
     # --- 5. CANOPY GAP FRACTIONS ---
@@ -95,7 +99,11 @@ def process_grid_cell(data_packet):
     f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]) / total_transect_length_m) * 100
     f_gt_200 = (np.sum(all_gap_lengths[(all_gap_lengths > 2.00)]) / total_transect_length_m) * 100
 
-    return oid, [bgr_percent, lpi_percent, mean_fetch_exact, herb_woody_ratio, f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200]
+    return oid, [
+      bgr_percent, lpi_percent, mean_fetch_exact, herb_woody_ratio, 
+      f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200, 
+      herb_percent, woody_percent
+    ]
     
   except Exception as e:
     return oid, None
@@ -119,7 +127,12 @@ if __name__ == '__main__':
   )
   arcpy.management.CopyFeatures(projected_grid, output_fc)
 
-  new_fields = ['BGR_pct', 'LPI_pct', 'Fetch_m', 'Herb_Woody_Ratio', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
+  new_fields = [
+    'BGR_pct', 'LPI_pct', 'Fetch_m', 'Herb_Woody_Ratio', 
+    'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200',
+    'Herb_pct', 'Woody_pct'
+  ]
+  
   for field in new_fields:
     arcpy.management.AddField(output_fc, field, 'DOUBLE')
 
@@ -174,13 +187,13 @@ if __name__ == '__main__':
 
   # --- 3. Write results back ---
   print('Writing results back to the Feature Class attribute table...')
+  # The slice increases from row[1:10] to row[1:12] to write 11 fields
   update_fields = ['OID@'] + new_fields
   with arcpy.da.UpdateCursor(output_fc, update_fields) as cursor:
     for row in cursor:
       oid = row[0]
       if oid in results_dict:
-        # Changed slice from row[1:9] to row[1:10] to account for 9 calculated fields
-        row[1:10] = results_dict[oid]
+        row[1:12] = results_dict[oid]
         cursor.updateRow(row)
 
-  print('\nProcessing Complete! Seasonal routing, geodetic snapping, and math fixes were successful.')
+  print('\nProcessing Complete! Seasonal routing, geodetic snapping, and additional metrics successfully saved.')
