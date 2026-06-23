@@ -1,4 +1,4 @@
-### GEE Workflow for Predictive Landscape Metric Maps
+### GEE Workflow for Sentinel-2 Predictive Landscape Metric Maps
 
 ```mermaid
 graph TD
