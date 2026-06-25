@@ -111,15 +111,6 @@ plt.title('Split Correlation Matrix of Exact Sampling Metrics\n'
           '(Lower Left: Pearson Linear $r$  |  Upper Right: Spearman Rank $\\rho$)', 
           fontsize=16, fontweight='bold', pad=20)
 
-# Add text boxes inside the plot area to label the triangles
-ax.text(0.85, 0.15, "Spearman ($\\rho$)\nNon-Linear/Monotonic", 
-        ha="center", va="center", transform=ax.transAxes, 
-        fontsize=12, color="black", bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray', boxstyle='round,pad=0.5'))
-
-ax.text(0.15, 0.85, "Pearson ($r$)\nLinear Trend", 
-        ha="center", va="center", transform=ax.transAxes, 
-        fontsize=12, color="black", bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray', boxstyle='round,pad=0.5'))
-
 # Final formatting and export
 plt.tight_layout()
 filename = "Split_Metric_Correlation_Matrix_110m.png"
