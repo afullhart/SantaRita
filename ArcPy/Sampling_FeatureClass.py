@@ -25,7 +25,7 @@ herb_value = 1    # Class value for Herb Cover
 woody_value = 2   # Class value for Woody Cover
 
 # ====================================================================
-# HELPER FUNCTIONS (Must be at the top level for multiprocessing)
+# HELPER FUNCTIONS
 # ====================================================================
 def get_gap_lengths(transect_array, gap_val, p_size):
     padded = np.concatenate(([False], (transect_array == gap_val), [False]))
@@ -38,23 +38,21 @@ def process_polygon(task):
     oid, cx, cy, xmin, ymin, xmax, ymax, active_tiff, cell_size, is_circle = task
     
     try:
-        # 1. READ RASTER CHUNK (Bounding Box)
+        # 1. READ RASTER CHUNK
         lower_left = arcpy.Point(xmin, ymin)
         ncols = int(round((xmax - xmin) / cell_size))
         nrows = int(round((ymax - ymin) / cell_size))
         
         main_array = arcpy.RasterToNumPyArray(active_tiff, lower_left, ncols, nrows, nodata_to_value=-9999)
         
-        # 2. CREATE VALIDITY MASK (Circle vs Square)
+        # 2. CREATE VALIDITY MASK
         valid_mask = main_array != -9999
         
         if is_circle:
             Y, X = np.ogrid[:nrows, :ncols]
-            # Center coordinates in local pixel space
             center_col = (cx - xmin) / cell_size
             center_row = (ymax - cy) / cell_size
             dist_from_center = np.sqrt((X - center_col)**2 + (Y - center_row)**2)
-            # 55m radius for the 110m plots
             poly_mask = dist_from_center <= (55.0 / cell_size)
             valid_mask = valid_mask & poly_mask
 
@@ -63,12 +61,11 @@ def process_polygon(task):
             return oid, None
 
         # ==============================================================
-        # SUITE 1: EXACT 2D METRICS (Using SciPy instead of ArcPy)
+        # SUITE 1: EXACT 2D METRICS
         # ==============================================================
         bare_ground_pixels = np.sum(main_array[valid_mask] == target_value)
         exact_bgr = (float(bare_ground_pixels) / float(total_valid_pixels)) * 100
 
-        # LPI (RegionGroup Alternative)
         is_bare = (main_array == target_value) & valid_mask
         structure = np.ones((3, 3), dtype=int)
         labeled_array, num_features = label(is_bare, structure=structure)
@@ -79,14 +76,12 @@ def process_polygon(task):
         else:
             exact_lpi = 0.0
 
-        # HERB-TO-WOODY & COVER PCT
         herb_pixels = np.sum(main_array[valid_mask] == herb_value)
         woody_pixels = np.sum(main_array[valid_mask] == woody_value)
         exact_herb_pct = (float(herb_pixels) / float(total_valid_pixels)) * 100
         exact_woody_pct = (float(woody_pixels) / float(total_valid_pixels)) * 100
         exact_herb_woody = (float(herb_pixels) / float(woody_pixels)) if woody_pixels > 0 else None
 
-        # FETCH (EucDistance Alternative)
         is_bare_full = (main_array == target_value)
         dist_array = distance_transform_edt(is_bare_full) * cell_size
         valid_full_fetch = dist_array[valid_mask]
@@ -119,15 +114,16 @@ def process_polygon(task):
         start_buffer_m = 5.0
         distances = np.linspace(start_buffer_m, start_buffer_m + transect_length_m, int(transect_length_m / cell_size))
         
-        all_nri_transects, all_fetch_25cm, all_fetch_50cm, all_fetch_100cm = [], [], [], []
+        all_nri_transects, all_fetch_25cm, all_fetch_50cm, all_fetch_100cm, all_fetch_200cm = [], [], [], [], []
         
         # Initialize accumulators
-        spoke_bgr_pixels, spoke_bgr_pixels_25cm, spoke_bgr_pixels_50cm, spoke_bgr_pixels_100cm = 0, 0, 0, 0
+        spoke_bgr_pixels, spoke_bgr_pixels_25cm, spoke_bgr_pixels_50cm, spoke_bgr_pixels_100cm, spoke_bgr_pixels_200cm = 0, 0, 0, 0, 0
         spoke_herb_pixels, spoke_woody_pixels = 0, 0
         spoke_herb_pixels_25cm, spoke_woody_pixels_25cm = 0, 0
         spoke_herb_pixels_50cm, spoke_woody_pixels_50cm = 0, 0
         spoke_herb_pixels_100cm, spoke_woody_pixels_100cm = 0, 0
-        total_pins_25cm, total_pins_50cm, total_pins_100cm = 0, 0, 0
+        spoke_herb_pixels_200cm, spoke_woody_pixels_200cm = 0, 0
+        total_pins_25cm, total_pins_50cm, total_pins_100cm, total_pins_200cm = 0, 0, 0, 0
         
         for az in [0, 120, 240]:
             az_rad = np.radians(az)
@@ -149,36 +145,45 @@ def process_polygon(task):
             spoke_herb_pixels += np.sum(transect_values == herb_value)
             spoke_woody_pixels += np.sum(transect_values == woody_value)
             
-            # 25cm Interval Measurement (Assuming 5cm pixels -> 5 pixel interval)
+            # 25cm Interval (5 pixels)
             vals_25cm = transect_values[::5]
             spoke_bgr_pixels_25cm += np.sum(vals_25cm == target_value)
             spoke_herb_pixels_25cm += np.sum(vals_25cm == herb_value)
             spoke_woody_pixels_25cm += np.sum(vals_25cm == woody_value)
             total_pins_25cm += len(vals_25cm)
 
-            # 50cm Interval Measurement
+            # 50cm Interval (10 pixels)
             vals_50cm = transect_values[::10]
             spoke_bgr_pixels_50cm += np.sum(vals_50cm == target_value)
             spoke_herb_pixels_50cm += np.sum(vals_50cm == herb_value)
             spoke_woody_pixels_50cm += np.sum(vals_50cm == woody_value)
             total_pins_50cm += len(vals_50cm)
             
-            # 100cm Interval Measurement
+            # 100cm Interval (20 pixels)
             vals_100cm = transect_values[::20]
             spoke_bgr_pixels_100cm += np.sum(vals_100cm == target_value)
             spoke_herb_pixels_100cm += np.sum(vals_100cm == herb_value)
             spoke_woody_pixels_100cm += np.sum(vals_100cm == woody_value)
             total_pins_100cm += len(vals_100cm)
+
+            # 200cm Interval (40 pixels)
+            vals_200cm = transect_values[::40]
+            spoke_bgr_pixels_200cm += np.sum(vals_200cm == target_value)
+            spoke_herb_pixels_200cm += np.sum(vals_200cm == herb_value)
+            spoke_woody_pixels_200cm += np.sum(vals_200cm == woody_value)
+            total_pins_200cm += len(vals_200cm)
             
             all_fetch_25cm.extend(fetch_transect_values[::5])
             all_fetch_50cm.extend(fetch_transect_values[::10])
             all_fetch_100cm.extend(fetch_transect_values[::20])
+            all_fetch_200cm.extend(fetch_transect_values[::40])
         
         # Calculate NRI Metrics
         nri_bgr = (float(spoke_bgr_pixels) / (len(distances) * 3)) * 100
         nri_bgr_25cm = (float(spoke_bgr_pixels_25cm) / float(total_pins_25cm)) * 100 if total_pins_25cm > 0 else 0.0
         nri_bgr_50cm = (float(spoke_bgr_pixels_50cm) / float(total_pins_50cm)) * 100 if total_pins_50cm > 0 else 0.0
         nri_bgr_100cm = (float(spoke_bgr_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
+        nri_bgr_200cm = (float(spoke_bgr_pixels_200cm) / float(total_pins_200cm)) * 100 if total_pins_200cm > 0 else 0.0
 
         nri_herb_0cm = (float(spoke_herb_pixels) / (len(distances) * 3)) * 100
         nri_woody_0cm = (float(spoke_woody_pixels) / (len(distances) * 3)) * 100
@@ -192,15 +197,20 @@ def process_polygon(task):
         nri_herb_100cm = (float(spoke_herb_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
         nri_woody_100cm = (float(spoke_woody_pixels_100cm) / float(total_pins_100cm)) * 100 if total_pins_100cm > 0 else 0.0
 
+        nri_herb_200cm = (float(spoke_herb_pixels_200cm) / float(total_pins_200cm)) * 100 if total_pins_200cm > 0 else 0.0
+        nri_woody_200cm = (float(spoke_woody_pixels_200cm) / float(total_pins_200cm)) * 100 if total_pins_200cm > 0 else 0.0
+
         nri_hw_0cm = (float(spoke_herb_pixels) / float(spoke_woody_pixels)) if spoke_woody_pixels > 0 else None
         nri_hw_25cm = (float(spoke_herb_pixels_25cm) / float(spoke_woody_pixels_25cm)) if spoke_woody_pixels_25cm > 0 else None
         nri_hw_50cm = (float(spoke_herb_pixels_50cm) / float(spoke_woody_pixels_50cm)) if spoke_woody_pixels_50cm > 0 else None
         nri_hw_100cm = (float(spoke_herb_pixels_100cm) / float(spoke_woody_pixels_100cm)) if spoke_woody_pixels_100cm > 0 else None
+        nri_hw_200cm = (float(spoke_herb_pixels_200cm) / float(spoke_woody_pixels_200cm)) if spoke_woody_pixels_200cm > 0 else None
         
-        f25_valid, f50_valid, f100_valid = np.array(all_fetch_25cm), np.array(all_fetch_50cm), np.array(all_fetch_100cm)
+        f25_valid, f50_valid, f100_valid, f200_valid = np.array(all_fetch_25cm), np.array(all_fetch_50cm), np.array(all_fetch_100cm), np.array(all_fetch_200cm)
         nri_fetch_25cm = float(np.mean(f25_valid[f25_valid >= 0])) if f25_valid.size > 0 else 0.0
         nri_fetch_50cm = float(np.mean(f50_valid[f50_valid >= 0])) if f50_valid.size > 0 else 0.0
         nri_fetch_100cm = float(np.mean(f100_valid[f100_valid >= 0])) if f100_valid.size > 0 else 0.0
+        nri_fetch_200cm = float(np.mean(f200_valid[f200_valid >= 0])) if f200_valid.size > 0 else 0.0
         
         total_nri_length_m = 3 * transect_length_m
         all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
@@ -212,16 +222,16 @@ def process_polygon(task):
         nri_gt_200 = (np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100
         nri_total = nri_0_24 + nri_25_50 + nri_51_100 + nri_101_200 + nri_gt_200
 
-        # UPDATE RESULTS ARRAY
+        # UPDATE RESULTS ARRAY (Appended 200cm fields)
         results = [
             exact_bgr, exact_lpi, exact_fetch, exact_herb_woody, 
             exact_herb_pct, exact_woody_pct,
             ex_0_24, ex_25_50, ex_51_100, ex_101_200, ex_gt_200, ex_total,
-            nri_bgr, nri_bgr_25cm, nri_bgr_50cm, nri_bgr_100cm,
-            nri_herb_0cm, nri_herb_25cm, nri_herb_50cm, nri_herb_100cm,
-            nri_woody_0cm, nri_woody_25cm, nri_woody_50cm, nri_woody_100cm,
-            nri_hw_0cm, nri_hw_25cm, nri_hw_50cm, nri_hw_100cm,
-            nri_fetch_25cm, nri_fetch_50cm, nri_fetch_100cm,
+            nri_bgr, nri_bgr_25cm, nri_bgr_50cm, nri_bgr_100cm, nri_bgr_200cm,
+            nri_herb_0cm, nri_herb_25cm, nri_herb_50cm, nri_herb_100cm, nri_herb_200cm,
+            nri_woody_0cm, nri_woody_25cm, nri_woody_50cm, nri_woody_100cm, nri_woody_200cm,
+            nri_hw_0cm, nri_hw_25cm, nri_hw_50cm, nri_hw_100cm, nri_hw_200cm,
+            nri_fetch_25cm, nri_fetch_50cm, nri_fetch_100cm, nri_fetch_200cm,
             nri_0_24, nri_25_50, nri_51_100, nri_101_200, nri_gt_200, nri_total
         ]
         return oid, results
@@ -255,16 +265,16 @@ if __name__ == '__main__':
         if 'Month' not in existing_fields:
             arcpy.management.AddField(current_fc, 'Month', 'TEXT', field_length=15)
 
-        # 2. Add Metric Fields (Updated to include 25cm intervals)
+        # 2. Add Metric Fields (Updated to include 200cm intervals)
         new_fields = [
             'Exact_BGR_Pct', 'Exact_LPI_Pct', 'Exact_Fetch_m', 'Exact_Herb_Woody_Ratio',
             'Exact_Herb_Pct', 'Exact_Woody_Pct',
             'Exact_Gap_0_24', 'Exact_Gap_25_50', 'Exact_Gap_51_100', 'Exact_Gap_101_200', 'Exact_Gap_gt_200', 'ExactTotal_Gap',
-            'NRI_BGR_0cm_Pct', 'NRI_BGR_25cm_Pct', 'NRI_BGR_50cm_Pct', 'NRI_BGR_100cm_Pct',
-            'NRI_Herb_0cm_Pct', 'NRI_Herb_25cm_Pct', 'NRI_Herb_50cm_Pct', 'NRI_Herb_100cm_Pct',
-            'NRI_Woody_0cm_Pct', 'NRI_Woody_25cm_Pct', 'NRI_Woody_50cm_Pct', 'NRI_Woody_100cm_Pct',
-            'NRI_HW_Ratio_0cm', 'NRI_HW_Ratio_25cm', 'NRI_HW_Ratio_50cm', 'NRI_HW_Ratio_100cm',
-            'NRI_Fetch_25cm', 'NRI_Fetch_50cm', 'NRI_Fetch_100cm',
+            'NRI_BGR_0cm_Pct', 'NRI_BGR_25cm_Pct', 'NRI_BGR_50cm_Pct', 'NRI_BGR_100cm_Pct', 'NRI_BGR_200cm_Pct',
+            'NRI_Herb_0cm_Pct', 'NRI_Herb_25cm_Pct', 'NRI_Herb_50cm_Pct', 'NRI_Herb_100cm_Pct', 'NRI_Herb_200cm_Pct',
+            'NRI_Woody_0cm_Pct', 'NRI_Woody_25cm_Pct', 'NRI_Woody_50cm_Pct', 'NRI_Woody_100cm_Pct', 'NRI_Woody_200cm_Pct',
+            'NRI_HW_Ratio_0cm', 'NRI_HW_Ratio_25cm', 'NRI_HW_Ratio_50cm', 'NRI_HW_Ratio_100cm', 'NRI_HW_Ratio_200cm',
+            'NRI_Fetch_25cm', 'NRI_Fetch_50cm', 'NRI_Fetch_100cm', 'NRI_Fetch_200cm',
             'NRI_Gap_0_24', 'NRI_Gap_25_50', 'NRI_Gap_51_100', 'NRI_Gap_101_200', 'NRI_Gap_gt_200', 'NRI_Total_Gap'
         ]
 
@@ -335,4 +345,3 @@ if __name__ == '__main__':
     arcpy.CheckInExtension('Spatial')
     print('\n========================================================')
     print('ALL PROCESSING COMPLETE.')
-    
