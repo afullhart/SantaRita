@@ -30,30 +30,30 @@ pairs = [
     ('Exact_BGR_Pct', 'NRI_BGR_25cm_Pct'),
     ('Exact_BGR_Pct', 'NRI_BGR_50cm_Pct'),
     ('Exact_BGR_Pct', 'NRI_BGR_100cm_Pct'),
-    ('Exact_BGR_Pct', 'NRI_BGR_200cm_Pct'), # New 200cm
+    ('Exact_BGR_Pct', 'NRI_BGR_200cm_Pct'),
     
     ('Exact_Herb_Pct', 'NRI_Herb_0cm_Pct'),
     ('Exact_Herb_Pct', 'NRI_Herb_25cm_Pct'),
     ('Exact_Herb_Pct', 'NRI_Herb_50cm_Pct'),
     ('Exact_Herb_Pct', 'NRI_Herb_100cm_Pct'),
-    ('Exact_Herb_Pct', 'NRI_Herb_200cm_Pct'), # New 200cm
+    ('Exact_Herb_Pct', 'NRI_Herb_200cm_Pct'),
     
     ('Exact_Woody_Pct', 'NRI_Woody_0cm_Pct'),
     ('Exact_Woody_Pct', 'NRI_Woody_25cm_Pct'),
     ('Exact_Woody_Pct', 'NRI_Woody_50cm_Pct'),
     ('Exact_Woody_Pct', 'NRI_Woody_100cm_Pct'),
-    ('Exact_Woody_Pct', 'NRI_Woody_200cm_Pct'), # New 200cm
+    ('Exact_Woody_Pct', 'NRI_Woody_200cm_Pct'),
 
     ('Exact_Fetch_m', 'NRI_Fetch_25cm'),
     ('Exact_Fetch_m', 'NRI_Fetch_50cm'),
     ('Exact_Fetch_m', 'NRI_Fetch_100cm'),
-    ('Exact_Fetch_m', 'NRI_Fetch_200cm'), # New 200cm
+    ('Exact_Fetch_m', 'NRI_Fetch_200cm'),
     
     ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_0cm'),
     ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_25cm'),
     ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_50cm'),
     ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_100cm'),
-    ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_200cm'), # New 200cm
+    ('Exact_Herb_Woody_Ratio', 'NRI_HW_Ratio_200cm'),
     
     ('Exact_Gap_0_24', 'NRI_Gap_0_24'),
     ('Exact_Gap_25_50', 'NRI_Gap_25_50'),
