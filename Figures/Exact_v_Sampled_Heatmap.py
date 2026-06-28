@@ -35,7 +35,7 @@ df['r'] = np.sqrt(df['R2']) * np.sign(df['OLS_Slope'])
 r_pivot = df.pivot(index='Metric', columns='Scale', values='r')
 sens_pivot = df.pivot(index='Metric', columns='Scale', values='Sens_Slope')
 
-# 5. Reorder indices (Includes the new 25cm and 200cm scales)
+# 5. Reorder indices
 metric_order = ['BGR', 'Herb', 'Woody', 'Herb_Woody_Ratio', 'Fetch', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
 scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
 
