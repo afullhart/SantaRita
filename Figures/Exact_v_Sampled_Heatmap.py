@@ -55,8 +55,6 @@ def add_strikes(ax, data_pivot):
             if pd.isna(data_pivot.iloc[i, j]):
                 # Draw a diagonal line from bottom-left to top-right of the cell
                 ax.plot([j, j+1], [i+1, i], color='gray', lw=1.5)
-                # (Optional) Uncomment the line below to make it a full "X" instead of a single strike
-                # ax.plot([j, j+1], [i, i+1], color='gray', lw=1.5)
 
 
 # ====================================================================
@@ -71,7 +69,7 @@ sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes[0],
 add_strikes(axes[0], r_pivot)  # Apply strikes to empty cells
 axes[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=15, fontweight='bold')
 axes[0].set_ylabel('Ground Cover Metric', fontweight='bold')
-axes[0].set_xlabel('NRI Sampling Scale', fontweight='bold')
+axes[0].set_xlabel('NRI Transect Sampling Scale', fontweight='bold') # Updated label
 
 # Right Plot: Sen's Slope
 sns.heatmap(sens_pivot, annot=True, fmt=".2f", cmap="vlag", center=1.0, ax=axes[1], 
@@ -80,7 +78,7 @@ sns.heatmap(sens_pivot, annot=True, fmt=".2f", cmap="vlag", center=1.0, ax=axes[
 add_strikes(axes[1], sens_pivot)  # Apply strikes to empty cells
 axes[1].set_title("Sen's Slope\nExact vs Sampled (1.0 = Perfect 1:1)", pad=15, fontweight='bold')
 axes[1].set_ylabel('')
-axes[1].set_xlabel('NRI Sampling Scale', fontweight='bold')
+axes[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold') # Updated label
 
 plt.tight_layout()
 plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.png', dpi=300, bbox_inches='tight')
