@@ -10,10 +10,14 @@ df = pd.read_csv(r"C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Metrics.csv")
 def get_scale(y_col):
     if 'Gap' in y_col: 
         return '0cm'  # All gaps strictly use the 0cm baseline sampling scale
+    elif '25cm' in y_col: 
+        return '25cm'
     elif '50cm' in y_col: 
         return '50cm'
     elif '100cm' in y_col: 
         return '100cm'
+    elif '200cm' in y_col: 
+        return '200cm'
     elif '0cm' in y_col: 
         return '0cm'
     return 'Unknown'
@@ -31,9 +35,9 @@ df['r'] = np.sqrt(df['R2']) * np.sign(df['OLS_Slope'])
 r_pivot = df.pivot(index='Metric', columns='Scale', values='r')
 sens_pivot = df.pivot(index='Metric', columns='Scale', values='Sens_Slope')
 
-# 5. Reorder indices (Cleaned up the columns to only include true sampling scales)
+# 5. Reorder indices (Includes the new 25cm and 200cm scales)
 metric_order = ['BGR', 'Herb', 'Woody', 'Herb_Woody_Ratio', 'Fetch', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
-scale_order = ['0cm', '50cm', '100cm']
+scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
 
 r_pivot = r_pivot.reindex(index=[m for m in metric_order if m in r_pivot.index], 
                           columns=[s for s in scale_order if s in r_pivot.columns])
@@ -43,7 +47,7 @@ sens_pivot = sens_pivot.reindex(index=[m for m in metric_order if m in sens_pivo
 # ====================================================================
 # PLOTTING
 # ====================================================================
-fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+fig, axes = plt.subplots(1, 2, figsize=(16, 6)) # Increased width slightly for the new columns
 
 # Left Plot: Pearson r
 sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes[0], 
