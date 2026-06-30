@@ -123,6 +123,7 @@ def process_polygon(task):
 # ====================================================================
 if __name__ == '__main__':
     arcpy.ResetEnvironments()
+    arcpy.env.overwriteOutput = True
     arcpy.CheckOutExtension('Spatial')
     cell_size = float(arcpy.management.GetRasterProperties(may_tiff, 'CELLSIZEX').getOutput(0))
     cores = multiprocessing.cpu_count()
