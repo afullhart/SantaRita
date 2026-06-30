@@ -1,7 +1,7 @@
 import os
 import arcpy
 import numpy as np
-from scipy.ndimage import label, distance_transform_edt
+from scipy.ndimage import distance_transform_edt
 import concurrent.futures
 import multiprocessing
 
@@ -13,11 +13,9 @@ sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Class
 csv_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1'
 out_gdb = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb'
 
-# Updated suffix to reflect the single line methodology
+# Restricting analysis exclusively to the 110m NRI plots to isolate geometric bias
 feature_classes_to_process = {
-    os.path.join(out_gdb, 'SRER_NRI_Plots_110m'): 'SRER_NRI_Plots_110m_Single_Line_Convergence.csv',
-    os.path.join(out_gdb, 'SRER_Grid_30m'): 'SRER_Grid_30m_Single_Line_Convergence.csv',
-    os.path.join(out_gdb, 'SRER_Grid_10m'): 'SRER_Grid_10m_Single_Line_Convergence.csv'
+    os.path.join(out_gdb, 'SRER_NRI_Plots_110m'): 'SRER_NRI_Plots_110m_Single_Line_Convergence.csv'
 }
 
 target_value = 3  
@@ -129,7 +127,6 @@ if __name__ == '__main__':
     cell_size = float(arcpy.management.GetRasterProperties(may_tiff, 'CELLSIZEX').getOutput(0))
     cores = multiprocessing.cpu_count()
 
-    # Define dynamic fields (Updated prefix to 'Line_')
     new_fields = ['Exact_BGR_Pct', 'Exact_Herb_Pct', 'Exact_Woody_Pct', 'Exact_HW_Ratio', 'Exact_Fetch_m']
     for interval in LINE_INTERVALS_CM:
         new_fields.extend([
@@ -155,7 +152,8 @@ if __name__ == '__main__':
             for oid, geom, month_val in cursor:
                 active_tiff = may_tiff if month_val == 'May_2019' else sep_tiff
                 ext = geom.extent
-                tasks.append((oid, geom.centroid.X, geom.centroid.Y, ext.XMin, ext.YMin, ext.XMax, ext.YMax, active_tiff, cell_size, '110m' in current_fc))
+                # Hardcoded 'is_circle' to True since we are only running the 110m plots
+                tasks.append((oid, geom.centroid.X, geom.centroid.Y, ext.XMin, ext.YMin, ext.XMax, ext.YMax, active_tiff, cell_size, True))
 
         results_dict = {}
         with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -176,4 +174,4 @@ if __name__ == '__main__':
         print(f"Exported: {csv_name}")
 
     print('\nALL PROCESSING COMPLETE.')
-  
+    
