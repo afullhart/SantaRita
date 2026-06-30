@@ -189,6 +189,13 @@ for i, (x_col, y_col) in enumerate(pairs):
         mre_array[np.isinf(mre_array)] = np.nan
         mre_pct = np.nanmean(mre_array) * 100
 
+        # Calculate Percent Bias (PBIAS) between Evaluated (Y) and Reference (X)
+        sum_X = np.sum(X)
+        if sum_X != 0:
+            pbias = (np.sum(Y - X) / sum_X) * 100
+        else:
+            pbias = np.nan
+
     # Calculate Sen's Slope for ALL pairs
     sens_slope, sens_intercept, sens_lo, sens_up = stats.mstats.theilslopes(Y, X, alpha=0.95)
 
@@ -222,9 +229,10 @@ for i, (x_col, y_col) in enumerate(pairs):
             is_sig = False
             sig_text = "N/A"
 
-        # Base text string with MK Test included
+        # Base text string with MK Test and PBIAS included
         text_str = (f'OLS Slope: {slope:.3f}\nIntercept: {intercept:.3f}\n$R^2$: {r_squared:.3f}\n'
                     f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nMRE%: {mre_pct:.2f}\n'
+                    f'PBIAS: {pbias:.2f}%\n'
                     f'---\n'
                     f"Sen's Slope: {sens_slope:.3f} ({sens_lo:.2f}, {sens_up:.2f})\n"
                     f"MK Tau (y-x): {tau:.3f} (p: {p_value_one_tailed:.3f})\n"
@@ -243,6 +251,7 @@ for i, (x_col, y_col) in enumerate(pairs):
         # ==================================================================
         text_str = (f'OLS Slope: {slope:.3f}\nIntercept: {intercept:.3f}\n$R^2$: {r_squared:.3f}\n'
                     f'RMSE: {rmse:.3f}\nMAE: {mae:.3f}\nMRE%: {mre_pct:.2f}\n'
+                    f'PBIAS: {pbias:.2f}%\n'
                     f'---\n'
                     f"Sen's Slope: {sens_slope:.3f} ({sens_lo:.2f}, {sens_up:.2f})")
 
@@ -262,6 +271,7 @@ for i, (x_col, y_col) in enumerate(pairs):
         'RMSE': rmse,
         'MAE': mae,
         'MRE_Pct': mre_pct,
+        'PBIAS_Pct': pbias,
         'Sens_Slope': sens_slope,
         'Sens_CI_Lower': sens_lo,
         'Sens_CI_Upper': sens_up,
@@ -275,7 +285,6 @@ for i, (x_col, y_col) in enumerate(pairs):
         sampled_metrics.append(current_metrics)
     else:
         exact_metrics.append(current_metrics)
-
 
     # ==================================================================
     # GRAPHING
