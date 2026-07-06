@@ -149,7 +149,19 @@ def process_simulation_iteration(task):
     ex_101_200 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 1.01) & (all_exhaust_gaps <= 2.00)]) / total_exhaust_length_m) * 100
     ex_gt_200 = (np.sum(all_exhaust_gaps[all_exhaust_gaps > 2.00]) / total_exhaust_length_m) * 100
     
-    # Synthetic NRI Metrics
+    # Prepare result dictionary
+    res = {
+        'BG_Bin': target_bg,
+        'True_BG_Pct': true_bg_pct,
+        'Exact_Fetch': exact_fetch,
+        'Exact_Gap_0_24': ex_0_24,
+        'Exact_Gap_25_50': ex_25_50,
+        'Exact_Gap_51_100': ex_51_100,
+        'Exact_Gap_101_200': ex_101_200,
+        'Exact_Gap_gt_200': ex_gt_200
+    }
+
+    # Synthetic NRI Extractions
     all_nri_transects = []
     all_fetch_vals = []
     
@@ -157,50 +169,40 @@ def process_simulation_iteration(task):
         all_nri_transects.append(main_array[rows, cols])
         all_fetch_vals.append(dist_array[rows, cols])
         
-    total_nri_pixels = sum(len(t) for t in all_nri_transects)
-    nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
-    sampled_bg_pct = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+    # --- 1. Total Bare Ground Sampling (Multi-Scale) ---
+    bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
+    for label, step in bg_intervals.items():
+        if step == 1:
+            total_nri_pixels = sum(len(t) for t in all_nri_transects)
+            nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
+            sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+        else:
+            sampled_pixels = np.concatenate([t[::step] for t in all_nri_transects])
+            sampled_bg = (np.sum(sampled_pixels == target_value) / len(sampled_pixels)) * 100 if len(sampled_pixels) > 0 else 0.0
+        res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
         
-    fetch_sampled = np.concatenate([f[::5] for f in all_fetch_vals]) 
-    nri_fetch_25cm = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
+    # --- 2. Mean Fetch Sampling (Discrete Scales Only) ---
+    fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
+    for label, step in fetch_intervals.items():
+        fetch_sampled = np.concatenate([f[::step] for f in all_fetch_vals]) 
+        sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
+        res[f'Fetch_{label}_Error'] = sampled_mean - exact_fetch
     
+    # --- 3. Canopy Gap Fractions (Continuous 0cm Only) ---
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
-    nri_0_24 = (np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100
-    nri_25_50 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100
-    nri_51_100 = (np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / total_nri_length_m) * 100
-    nri_101_200 = (np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / total_nri_length_m) * 100
-    nri_gt_200 = (np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100
+    res['Gap_0_24_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100) - ex_0_24
+    res['Gap_25_50_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100) - ex_25_50
+    res['Gap_51_100_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / total_nri_length_m) * 100) - ex_51_100
+    res['Gap_101_200_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / total_nri_length_m) * 100) - ex_101_200
+    res['Gap_gt_200_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100) - ex_gt_200
     
-    # Export Exact values in addition to errors for proper MRE calculation
-    return {
-        'BG_Bin': target_bg,
-        'True_BG_Pct': true_bg_pct,
-        'BG_Error': sampled_bg_pct - true_bg_pct,
-        
-        'Exact_Fetch': exact_fetch,
-        'Fetch_Error': nri_fetch_25cm - exact_fetch,
-        
-        'Exact_Gap_0_24': ex_0_24,
-        'Gap_0_24_Error': nri_0_24 - ex_0_24,
-        
-        'Exact_Gap_25_50': ex_25_50,
-        'Gap_25_50_Error': nri_25_50 - ex_25_50,
-        
-        'Exact_Gap_51_100': ex_51_100,
-        'Gap_51_100_Error': nri_51_100 - ex_51_100,
-        
-        'Exact_Gap_101_200': ex_101_200,
-        'Gap_101_200_Error': nri_101_200 - ex_101_200,
-        
-        'Exact_Gap_gt_200': ex_gt_200,
-        'Gap_gt_200_Error': nri_gt_200 - ex_gt_200
-    }
+    return res
 
 # ====================================================================
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 15000 # Total number of simulations per variable.
+    num_iterations = 150 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -214,7 +216,7 @@ if __name__ == '__main__':
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
     total_tasks = len(tasks)
-    cores = multiprocessing.cpu_count() - 2
+    cores = multiprocessing.cpu_count() - 1
     
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
@@ -234,100 +236,112 @@ if __name__ == '__main__':
     print("\nProcessing complete. Generating statistics and plots...")
 
     # ====================================================================
-    # 4. DATA AGGREGATION & PLOTTING (Updated for 3x7 Grid)
+    # 4. DATA AGGREGATION & PLOTTING 
     # ====================================================================
     df = pd.DataFrame(results)
     
     def calc_mre(error, exact):
-        """Helper to calculate Mean Relative Error stably at the bin level."""
         m_exact = np.mean(exact)
         return 0.0 if m_exact == 0 else (np.mean(np.abs(error)) / m_exact) * 100
 
-    mae_df = df.groupby('BG_Bin').apply(lambda x: pd.Series({
-        'True_BG_Mean': np.mean(x['True_BG_Pct']),
+    def aggregate_metrics(x):
+        d = {'True_BG_Mean': np.mean(x['True_BG_Pct'])}
         
-        'Fetch_MAE': np.mean(np.abs(x['Fetch_Error'])),
-        'Fetch_MRE': calc_mre(x['Fetch_Error'], x['Exact_Fetch']),
-        'Fetch_Bias': np.mean(x['Fetch_Error']),
-        
-        'Gap_0_24_MAE': np.mean(np.abs(x['Gap_0_24_Error'])),
-        'Gap_0_24_MRE': calc_mre(x['Gap_0_24_Error'], x['Exact_Gap_0_24']),
-        'Gap_0_24_Bias': np.mean(x['Gap_0_24_Error']),
-        
-        'Gap_25_50_MAE': np.mean(np.abs(x['Gap_25_50_Error'])),
-        'Gap_25_50_MRE': calc_mre(x['Gap_25_50_Error'], x['Exact_Gap_25_50']),
-        'Gap_25_50_Bias': np.mean(x['Gap_25_50_Error']),
-        
-        'Gap_51_100_MAE': np.mean(np.abs(x['Gap_51_100_Error'])),
-        'Gap_51_100_MRE': calc_mre(x['Gap_51_100_Error'], x['Exact_Gap_51_100']),
-        'Gap_51_100_Bias': np.mean(x['Gap_51_100_Error']),
-        
-        'Gap_101_200_MAE': np.mean(np.abs(x['Gap_101_200_Error'])),
-        'Gap_101_200_MRE': calc_mre(x['Gap_101_200_Error'], x['Exact_Gap_101_200']),
-        'Gap_101_200_Bias': np.mean(x['Gap_101_200_Error']),
-        
-        'Gap_gt_200_MAE': np.mean(np.abs(x['Gap_gt_200_Error'])),
-        'Gap_gt_200_MRE': calc_mre(x['Gap_gt_200_Error'], x['Exact_Gap_gt_200']),
-        'Gap_gt_200_Bias': np.mean(x['Gap_gt_200_Error']),
+        # Aggregate BG
+        for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
+            d[f'BG_{scale}_MAE'] = np.mean(np.abs(x[f'BG_{scale}_Error']))
+            d[f'BG_{scale}_MRE'] = calc_mre(x[f'BG_{scale}_Error'], x['True_BG_Pct'])
+            d[f'BG_{scale}_Bias'] = np.mean(x[f'BG_{scale}_Error'])
+            
+        # Aggregate Fetch
+        for scale in ['25cm', '50cm', '100cm', '200cm']:
+            d[f'Fetch_{scale}_MAE'] = np.mean(np.abs(x[f'Fetch_{scale}_Error']))
+            d[f'Fetch_{scale}_MRE'] = calc_mre(x[f'Fetch_{scale}_Error'], x['Exact_Fetch'])
+            d[f'Fetch_{scale}_Bias'] = np.mean(x[f'Fetch_{scale}_Error'])
+            
+        # Aggregate Gaps
+        for gap in ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']:
+            d[f'{gap}_0cm_MAE'] = np.mean(np.abs(x[f'{gap}_0cm_Error']))
+            d[f'{gap}_0cm_MRE'] = calc_mre(x[f'{gap}_0cm_Error'], x[f'Exact_{gap}'])
+            d[f'{gap}_0cm_Bias'] = np.mean(x[f'{gap}_0cm_Error'])
+            
+        return pd.Series(d)
 
-        'BG_MAE': np.mean(np.abs(x['BG_Error'])),
-        'BG_MRE': calc_mre(x['BG_Error'], x['True_BG_Pct']),
-        'BG_Bias': np.mean(x['BG_Error'])
-    })).reset_index()
+    mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
 
-    # Create a 3x7 grid with a wide layout to accommodate 21 subplots
+    # Dynamic Plotting Configuration
+    plot_config = [
+        ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+        ('Fetch', 'Mean Fetch (m)', ['25cm', '50cm', '100cm', '200cm'], None),
+        ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['0cm'], 'steelblue'),
+        ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
+        ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
+        ('Gap_101_200', 'Canopy Gap 101-200cm (%)', ['0cm'], 'darkorange'),
+        ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick')
+    ]
+
+    scale_colors = {
+        '0cm': 'black',
+        '25cm': 'forestgreen',
+        '50cm': 'dodgerblue',
+        '100cm': 'darkorange',
+        '200cm': 'crimson'
+    }
+
     fig, axes = plt.subplots(3, 7, figsize=(28, 12), constrained_layout=True)
     fig.suptitle("Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
-    # NEW ORDER: Total Bare Ground moved to index 0
-    vars_to_plot = [
-        ('BG', 'Total Bare Ground', 'black'),
-        ('Fetch', 'Mean Fetch (m)', 'indigo'),
-        ('Gap_0_24', 'Canopy Gap 0-24cm', 'steelblue'),
-        ('Gap_25_50', 'Canopy Gap 25-50cm', 'cadetblue'),
-        ('Gap_51_100', 'Canopy Gap 51-100cm', 'mediumseagreen'),
-        ('Gap_101_200', 'Canopy Gap 101-200cm', 'darkorange'),
-        ('Gap_gt_200', 'Canopy Gap >200cm', 'firebrick')
-    ]
-    
-    for col, (prefix, title, color) in enumerate(vars_to_plot):
-        
-        # --- ROW 0: MAE ---
+    for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         ax_mae = axes[0, col]
-        ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{prefix}_MAE'], marker='o', color=color, linestyle='-', linewidth=2.5, markersize=7)
-        ax_mae.set_title(title, fontsize=15, pad=12)
-        ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2, label='Phase Shift (50%)' if col==0 else "")
-        ax_mae.grid(True, alpha=0.3)
-        if col == 0:
-            ax_mae.set_ylabel("MAE", fontsize=13)
-            ax_mae.legend(fontsize=10)
-            
-        # --- ROW 1: MRE (%) ---
         ax_mre = axes[1, col]
-        ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{prefix}_MRE'], marker='o', color=color, linestyle='-', linewidth=2.5, markersize=7)
+        ax_bias = axes[2, col]
+        
+        for scale in scales:
+            var_base = f'{prefix}_{scale}'
+            
+            # Use multi-scale dictionary if there are multiple lines. Otherwise, use the unique column color.
+            color = scale_colors[scale] if len(scales) > 1 else col_color
+            
+            # Explicitly label the '0cm' scales appropriately for the legend
+            label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+            
+            # Line styles
+            line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
+            
+            ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], label=label, **line_kws)
+            ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
+            ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
+            
+        # Format MAE Row
+        ax_mae.set_title(title, fontsize=15, pad=12)
+        
+        # Add phase shift line without a label to exclude it from the legend entirely
+        ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
+        ax_mae.grid(True, alpha=0.3)
+        
+        # Enforce legend on EVERY top row plot in the upper left corner
+        ax_mae.legend(loc='upper left', fontsize=10) 
+        
+        if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
+            
+        # Format MRE Row
         ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_mre.grid(True, alpha=0.3)
-        if col == 0:
-            ax_mre.set_ylabel("MRE (%)", fontsize=13)
+        if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
             
-        # --- ROW 2: Bias ---
-        ax_bias = axes[2, col]
-        ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{prefix}_Bias'], marker='o', color=color, linestyle='-', linewidth=2.5, markersize=7)
+        # Format Bias Row
         ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
-        ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5) # Zero reference line for Bias
+        ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
         ax_bias.grid(True, alpha=0.3)
         ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
-        if col == 0:
-            ax_bias.set_ylabel("Mean Bias", fontsize=13)
+        if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
 
-    # Save the unified figure using absolute paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(script_dir, 'Full_Simulation_Metrics.png')
-    csv_path = os.path.join(script_dir, 'Full_Simulation_Metrics.csv')
+    img_path = os.path.join(script_dir, 'Full_Simulation_Metrics_MultiScale.png')
+    csv_path = os.path.join(script_dir, 'Full_Simulation_Metrics_MultiScale.csv')
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
     
-    # Save raw data for external review
     mae_df.to_csv(csv_path, index=False)
     print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
