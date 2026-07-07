@@ -47,10 +47,15 @@ results = []
 
 # Group by the 5% bins and calculate metrics
 for bin_val, group in df.groupby('BG_Bin', observed=False):
-    if group.empty:
+    # FILTER: Skip bins with fewer than 3 plots to prevent volatile edge-case spikes
+    if len(group) < 3:
         continue
     
-    d = {'True_BG_Mean': group['Exact_BGR_Pct'].mean()}
+    # Extract the sample size of the current bin
+    d = {
+        'True_BG_Mean': group['Exact_BGR_Pct'].mean(),
+        'Sample_Size': len(group) 
+    }
     
     # Aggregate BG
     for scale in bg_scales:
@@ -76,9 +81,38 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
 mae_df = pd.DataFrame(results).dropna(subset=['True_BG_Mean']).sort_values('True_BG_Mean')
 
 # ====================================================================
-# 4. PLOTTING
+# 4. HELPER: ROBUST Y-AXIS AUTOSCALING
 # ====================================================================
-# Dynamic Plotting Configuration identical to simulation script
+def autoscale_y_robust(ax, margin=0.05, force_zero=False):
+    """Autoscales the y-axis tightly based on the actual lines plotted on the axes."""
+    min_y = np.inf
+    max_y = -np.inf
+    has_data = False
+    
+    # Extract data directly from the plotted matplotlib lines to avoid indexing issues
+    for line in ax.lines:
+        y_data = line.get_ydata()
+        valid_y = y_data[np.isfinite(y_data)]
+        if len(valid_y) > 0:
+            min_y = min(min_y, valid_y.min())
+            max_y = max(max_y, valid_y.max())
+            has_data = True
+            
+    if has_data:
+        if force_zero:
+            # Ensure 0 is included within the data limits bounds
+            min_y = min(min_y, 0)
+            max_y = max(max_y, 0)
+            
+        y_range = max_y - min_y
+        if y_range == 0:
+            y_range = 1.0 # fallback if a line is completely flat
+            
+        ax.set_ylim(min_y - (y_range * margin), max_y + (y_range * margin))
+
+# ====================================================================
+# 5. PLOTTING
+# ====================================================================
 plot_config = [
     ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
     ('Fetch', 'Mean Fetch (m)', ['25cm', '50cm', '100cm', '200cm'], None),
@@ -107,38 +141,46 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config):
     
     for scale in scales:
         var_base = f'{prefix}_{scale}'
-        
-        # Use multi-scale dictionary if there are multiple lines. Otherwise, use the unique column color.
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        
-        # Explicitly label the '0cm' scales appropriately for the legend
         label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
-        
-        # Line styles
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
         
+        # Plot the actual data lines
         ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], label=label, **line_kws)
         ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
         ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
         
+    # Apply strict Y-Axis autoscaling strictly to the plotted lines before adding structural lines
+    autoscale_y_robust(ax_mae, force_zero=False)
+    autoscale_y_robust(ax_mre, force_zero=False)
+    autoscale_y_robust(ax_bias, force_zero=True) # Bias MUST include the 0 reference line!
+        
     # Format MAE Row
     ax_mae.set_title(title, fontsize=15, pad=12)
     ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
-    ax_mae.set_xlim(0, 95)  # Enforce x-axis limits
+    ax_mae.set_xlim(0, 95)  
     ax_mae.grid(True, alpha=0.3)
     ax_mae.legend(loc='upper left', fontsize=10) 
-    if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
+    
+    # Annotate sample sizes exclusively in the first MAE subplot
+    if col == 0: 
+        ax_mae.set_ylabel("MAE", fontsize=13)
+        for _, row in mae_df.iterrows():
+            ax_mae.text(row['True_BG_Mean'], 0.02, f"n={int(row['Sample_Size'])}", 
+                        transform=ax_mae.get_xaxis_transform(), 
+                        fontsize=9, color='black', ha='center', va='bottom', rotation=90, # Added rotation here
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='lightgray'))
         
     # Format MRE Row
     ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
-    ax_mre.set_xlim(0, 95)  # Enforce x-axis limits
+    ax_mre.set_xlim(0, 95)  
     ax_mre.grid(True, alpha=0.3)
     if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
         
     # Format Bias Row
     ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
-    ax_bias.set_xlim(0, 95)  # Enforce x-axis limits
+    ax_bias.set_xlim(0, 95)  
     ax_bias.grid(True, alpha=0.3)
     ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
     if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
