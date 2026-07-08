@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
-from shapely.geometry import Point, Polygon, LineString
+from shapely.geometry import Polygon
 from scipy.ndimage import distance_transform_edt
 from matplotlib.path import Path
 
@@ -12,7 +12,6 @@ from matplotlib.path import Path
 # 1. HELPER FUNCTIONS
 # ====================================================================
 def polygon_to_path(polygon):
-    """Converts a Shapely Polygon to a matplotlib Path for fast rasterization."""
     vertices = list(polygon.exterior.coords)
     codes = [Path.MOVETO] + [Path.LINETO] * (len(vertices) - 2) + [Path.CLOSEPOLY]
     for interior in polygon.interiors:
@@ -22,17 +21,12 @@ def polygon_to_path(polygon):
     return Path(vertices, codes)
 
 def get_gap_lengths(transect_array, gap_val, p_size):
-    """Extracts lengths of continuous sequences matching gap_val."""
     padded = np.concatenate(([False], (transect_array == gap_val), [False]))
     diffs = np.diff(padded.astype(int))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
     return (ends - starts) * p_size
 
-# ==========================================
-# Geometry Generation Functions
-# ==========================================
 def create_irregular_shrub(center_x, center_y, base_radius, num_points=12):
-    """Generates an irregular polygon to represent a shrub."""
     angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
     points = []
     for angle in angles:
@@ -40,26 +34,14 @@ def create_irregular_shrub(center_x, center_y, base_radius, num_points=12):
         points.append((center_x + r * np.cos(angle), center_y + r * np.sin(angle)))
     return Polygon(points)
 
-def generate_mixed_shrubs(num_large, num_small, plot_radius, r_large=(1.0, 5.0), r_small=(0.05, 0.25)): 
-    """Generates a bimodal distribution of shrub polygons to mix large structural patches with fine fragmentation."""
+def generate_large_shrubs_only(num_large, plot_radius, r_large=(0.5, 3.0)): 
     shrubs = []
-    
-    # 1. Generate Large Structural Patches
     gen_radius_large = plot_radius + r_large[1]
     for _ in range(int(num_large)):
         radius = np.random.uniform(r_large[0], r_large[1])
         r = gen_radius_large * np.sqrt(np.random.uniform(0, 1))
         theta = np.random.uniform(0, 2 * np.pi)
         shrubs.append(create_irregular_shrub(r * np.cos(theta), r * np.sin(theta), radius))
-        
-    # 2. Generate Small Interstitial/Filler Patches
-    gen_radius_small = plot_radius + r_small[1]
-    for _ in range(int(num_small)):
-        radius = np.random.uniform(r_small[0], r_small[1])
-        r = gen_radius_small * np.sqrt(np.random.uniform(0, 1))
-        theta = np.random.uniform(0, 2 * np.pi)
-        shrubs.append(create_irregular_shrub(r * np.cos(theta), r * np.sin(theta), radius))
-        
     return shrubs
 
 # ====================================================================
@@ -70,7 +52,6 @@ def process_simulation_iteration(task):
     
     np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
 
-    # Grid Setup
     grid_size = int((plot_radius * 2) / cell_size)
     x = np.linspace(-plot_radius, plot_radius, grid_size)
     y = np.linspace(-plot_radius, plot_radius, grid_size)
@@ -80,7 +61,6 @@ def process_simulation_iteration(task):
     valid_mask = dist_from_center <= plot_radius
     total_valid_pixels = np.sum(valid_mask)
     
-    # Spoke Setup
     angles = [0, 120, 240]
     spoke_length_m = plot_radius - hub_radius
     distances = np.arange(0, spoke_length_m + cell_size, cell_size)
@@ -103,7 +83,7 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Shape Generation (Ultra-Fine SRER Fragmentation)
+    # Shape Generation Logic
     # ==========================================
     if target_bg == 50:
         is_inverted = False
@@ -111,17 +91,15 @@ def process_simulation_iteration(task):
         is_inverted = target_bg < 50
         
     target_coverage = target_bg / 100.0 if is_inverted else 1 - (target_bg / 100.0)
-    
     lambda_target = -np.log(1 - target_coverage)
     
-    # 30% structural, 70% ultra-fine filler
-    alpha_large = 0.30
+    # 0.25 Split Restored
+    alpha_large = 0.25
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
-    # Bounds calibrated to match drone fetch < 0.1m
-    r_large_bnds = (0.5, 2.0)
-    r_small_bnds = (0.02, 0.10)
+    r_large_bnds = (0.5, 3.0)
+    r_small_bnds = (0.05, 0.15)
     
     mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
     mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
@@ -130,39 +108,56 @@ def process_simulation_iteration(task):
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
-    shapes = generate_mixed_shrubs(num_large, num_small, plot_radius, r_large_bnds, r_small_bnds)
-    
-    # ==========================================
-    # Accelerated Bounding-Box Rasterization
-    # ==========================================
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     
-    for geom in shapes:
+    # ==========================================
+    # Rasterize Large Irregular Polygons
+    # ==========================================
+    large_shapes = generate_large_shrubs_only(num_large, plot_radius, r_large_bnds)
+    
+    for geom in large_shapes:
         if geom.is_empty: continue
-        
-        # Get exact bounds of the tiny polygon
         minx, miny, maxx, maxy = geom.bounds
-        
-        # Translate geographic bounds into array row/col indices (with a 2 pixel buffer)
         c_min = max(0, int((minx + plot_radius) / cell_size) - 2)
         c_max = min(grid_size, int((maxx + plot_radius) / cell_size) + 2)
         r_min = max(0, int((miny + plot_radius) / cell_size) - 2)
         r_max = min(grid_size, int((maxy + plot_radius) / cell_size) + 2)
         
-        if c_min >= c_max or r_min >= r_max:
-            continue
+        if c_min >= c_max or r_min >= r_max: continue
             
-        # Extract only the local grid area right underneath the polygon
         sub_X = X[r_min:r_max, c_min:c_max]
         sub_Y = Y[r_min:r_max, c_min:c_max]
-        
         pts = np.column_stack((sub_X.flatten(), sub_Y.flatten()))
         path = polygon_to_path(geom)
-        
-        # Check intersections against the localized subgrid only
         inside = path.contains_points(pts).reshape(sub_X.shape)
+        main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
         
-        # Overwrite those localized pixels in the main array
+    # ==========================================
+    # Fast NumPy Rasterization for Micro-Filler
+    # ==========================================
+    # Drop physical clumps instantly without using Shapely math
+    gen_radius_small = plot_radius + r_small_bnds[1]
+    
+    # Generate arrays of properties for all small patches instantly
+    r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+    r_dist = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
+    theta_arr = np.random.uniform(0, 2 * np.pi, num_small)
+    cx_arr = r_dist * np.cos(theta_arr)
+    cy_arr = r_dist * np.sin(theta_arr)
+    
+    # Slice arrays based on radius to stamp physical clumps
+    for cx, cy, rad in zip(cx_arr, cy_arr, r_small_arr):
+        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+
+        if c_min >= c_max or r_min >= r_max: continue
+
+        sub_X = X[r_min:r_max, c_min:c_max]
+        sub_Y = Y[r_min:r_max, c_min:c_max]
+
+        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
         main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
             
     if is_inverted:
@@ -193,7 +188,6 @@ def process_simulation_iteration(task):
     ex_101_200 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 1.01) & (all_exhaust_gaps <= 2.00)]) / total_exhaust_length_m) * 100
     ex_gt_200 = (np.sum(all_exhaust_gaps[all_exhaust_gaps > 2.00]) / total_exhaust_length_m) * 100
     
-    # Prepare result dictionary
     res = {
         'BG_Bin': target_bg,
         'True_BG_Pct': true_bg_pct,
@@ -205,15 +199,12 @@ def process_simulation_iteration(task):
         'Exact_Gap_gt_200': ex_gt_200
     }
 
-    # Synthetic NRI Extractions
     all_nri_transects = []
     all_fetch_vals = []
-    
     for rows, cols in spoke_indices:
         all_nri_transects.append(main_array[rows, cols])
         all_fetch_vals.append(dist_array[rows, cols])
         
-    # --- 1. Total Bare Ground Sampling (Multi-Scale) ---
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     for label, step in bg_intervals.items():
         if step == 1:
@@ -225,14 +216,12 @@ def process_simulation_iteration(task):
             sampled_bg = (np.sum(sampled_pixels == target_value) / len(sampled_pixels)) * 100 if len(sampled_pixels) > 0 else 0.0
         res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
         
-    # --- 2. Mean Fetch Sampling (Discrete Scales Only) ---
     fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     for label, step in fetch_intervals.items():
         fetch_sampled = np.concatenate([f[::step] for f in all_fetch_vals]) 
         sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
         res[f'Fetch_{label}_Error'] = sampled_mean - exact_fetch
     
-    # --- 3. Canopy Gap Fractions (Continuous 0cm Only) ---
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
     res['Gap_0_24_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100) - ex_0_24
     res['Gap_25_50_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100) - ex_25_50
@@ -279,9 +268,6 @@ if __name__ == '__main__':
 
     print("\nProcessing complete. Generating statistics and plots...")
 
-    # ====================================================================
-    # 4. DATA AGGREGATION & PLOTTING 
-    # ====================================================================
     df = pd.DataFrame(results)
     
     def calc_mre(error, exact):
@@ -291,22 +277,19 @@ if __name__ == '__main__':
     def aggregate_metrics(x):
         d = {
             'True_BG_Mean': np.mean(x['True_BG_Pct']),
-            'Exact_Fetch_Mean': np.mean(x['Exact_Fetch'])  # Captured average mean fetch
+            'Exact_Fetch_Mean': np.mean(x['Exact_Fetch'])
         }
         
-        # Aggregate BG
         for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
             d[f'BG_{scale}_MAE'] = np.mean(np.abs(x[f'BG_{scale}_Error']))
             d[f'BG_{scale}_MRE'] = calc_mre(x[f'BG_{scale}_Error'], x['True_BG_Pct'])
             d[f'BG_{scale}_Bias'] = np.mean(x[f'BG_{scale}_Error'])
             
-        # Aggregate Fetch
         for scale in ['25cm', '50cm', '100cm', '200cm']:
             d[f'Fetch_{scale}_MAE'] = np.mean(np.abs(x[f'Fetch_{scale}_Error']))
             d[f'Fetch_{scale}_MRE'] = calc_mre(x[f'Fetch_{scale}_Error'], x['Exact_Fetch'])
             d[f'Fetch_{scale}_Bias'] = np.mean(x[f'Fetch_{scale}_Error'])
             
-        # Aggregate Gaps
         for gap in ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']:
             d[f'{gap}_0cm_MAE'] = np.mean(np.abs(x[f'{gap}_0cm_Error']))
             d[f'{gap}_0cm_MRE'] = calc_mre(x[f'{gap}_0cm_Error'], x[f'Exact_{gap}'])
@@ -316,7 +299,6 @@ if __name__ == '__main__':
 
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
 
-    # --- PRINT AVERAGE MEAN FETCH TO CONSOLE ---
     print("\n" + "="*50)
     print("Average Exact Mean Fetch per Bare Ground Bin")
     print("="*50)
@@ -324,7 +306,6 @@ if __name__ == '__main__':
         print(f"Target BG: {int(row['BG_Bin'])}%  ->  Mean Fetch: {row['Exact_Fetch_Mean']:.4f} m")
     print("="*50 + "\n")
 
-    # Dynamic Plotting Configuration
     plot_config = [
         ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
         ('Fetch', 'Mean Fetch (m)', ['25cm', '50cm', '100cm', '200cm'], None),
@@ -353,38 +334,25 @@ if __name__ == '__main__':
         
         for scale in scales:
             var_base = f'{prefix}_{scale}'
-            
-            # Use multi-scale dictionary if there are multiple lines. Otherwise, use the unique column color.
             color = scale_colors[scale] if len(scales) > 1 else col_color
-            
-            # Explicitly label the '0cm' scales appropriately for the legend
             label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
-            
-            # Line styles
             line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
             
             ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], label=label, **line_kws)
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
             
-        # Format MAE Row
         ax_mae.set_title(title, fontsize=15, pad=12)
-        
-        # Add phase shift line without a label to exclude it from the legend entirely
         ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_mae.grid(True, alpha=0.3)
-        
-        # Enforce legend on EVERY top row plot in the upper left corner
         ax_mae.legend(loc='upper left', fontsize=10) 
         
         if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
             
-        # Format MRE Row
         ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_mre.grid(True, alpha=0.3)
         if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
             
-        # Format Bias Row
         ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
         ax_bias.grid(True, alpha=0.3)
@@ -400,4 +368,3 @@ if __name__ == '__main__':
     
     mae_df.to_csv(csv_path, index=False)
     print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
-    
