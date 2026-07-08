@@ -40,7 +40,7 @@ def create_irregular_shrub(center_x, center_y, base_radius, num_points=12):
         points.append((center_x + r * np.cos(angle), center_y + r * np.sin(angle)))
     return Polygon(points)
 
-def generate_mixed_shrubs(num_large, num_small, plot_radius, r_large=(1.0, 5.0), r_small=(0.1, 0.5)): 
+def generate_mixed_shrubs(num_large, num_small, plot_radius, r_large=(1.0, 5.0), r_small=(0.05, 0.25)): 
     """Generates a bimodal distribution of shrub polygons to mix large structural patches with fine fragmentation."""
     shrubs = []
     
@@ -103,7 +103,7 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Shape Generation (Bimodal Fragmentation)
+    # Shape Generation (Ultra-Fine SRER Fragmentation)
     # ==========================================
     if target_bg == 50:
         is_inverted = False
@@ -113,18 +113,24 @@ def process_simulation_iteration(task):
     target_coverage = target_bg / 100.0 if is_inverted else 1 - (target_bg / 100.0)
     
     lambda_target = -np.log(1 - target_coverage)
-    alpha_large = 0.75
+    
+    # 30% structural, 70% ultra-fine filler
+    alpha_large = 0.30
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
-    mean_area_large = np.pi * ((1.0**2 + 1.0*5.0 + 5.0**2) / 3)
-    mean_area_small = np.pi * ((0.1**2 + 0.1*0.5 + 0.5**2) / 3)
+    # Bounds calibrated to match drone fetch < 0.1m
+    r_large_bnds = (0.5, 2.0)
+    r_small_bnds = (0.02, 0.10)
+    
+    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
+    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
     
     plot_area = np.pi * plot_radius**2
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
-    shapes = generate_mixed_shrubs(num_large, num_small, plot_radius)
+    shapes = generate_mixed_shrubs(num_large, num_small, plot_radius, r_large_bnds, r_small_bnds)
     
     # ==========================================
     # Accelerated Bounding-Box Rasterization
