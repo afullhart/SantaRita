@@ -222,7 +222,6 @@ def process_polygon(task):
         nri_gt_200 = (np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100
         nri_total = nri_0_24 + nri_25_50 + nri_51_100 + nri_101_200 + nri_gt_200
 
-        # UPDATE RESULTS ARRAY (Appended 200cm fields)
         results = [
             exact_bgr, exact_lpi, exact_fetch, exact_herb_woody, 
             exact_herb_pct, exact_woody_pct,
