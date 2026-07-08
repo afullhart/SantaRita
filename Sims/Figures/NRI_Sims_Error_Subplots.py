@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
 from shapely.geometry import Point, Polygon, LineString
-from shapely.ops import unary_union
 from scipy.ndimage import distance_transform_edt
 from matplotlib.path import Path
 
@@ -41,20 +40,26 @@ def create_irregular_shrub(center_x, center_y, base_radius, num_points=12):
         points.append((center_x + r * np.cos(angle), center_y + r * np.sin(angle)))
     return Polygon(points)
 
-def generate_random_shrubs(num_shrubs=60, plot_radius=55): 
-    """Generates a list of randomly placed shrub polygons within the plot."""
+def generate_mixed_shrubs(num_large, num_small, plot_radius, r_large=(1.0, 5.0), r_small=(0.1, 0.5)): 
+    """Generates a bimodal distribution of shrub polygons to mix large structural patches with fine fragmentation."""
     shrubs = []
-    max_shrub_radius = 5.0
-    generation_radius = plot_radius + max_shrub_radius
-
-    for _ in range(num_shrubs):
-        radius = np.random.uniform(1.0, 5.0)
-        r = generation_radius * np.sqrt(np.random.uniform(0, 1))
+    
+    # 1. Generate Large Structural Patches
+    gen_radius_large = plot_radius + r_large[1]
+    for _ in range(int(num_large)):
+        radius = np.random.uniform(r_large[0], r_large[1])
+        r = gen_radius_large * np.sqrt(np.random.uniform(0, 1))
         theta = np.random.uniform(0, 2 * np.pi)
-
-        x = r * np.cos(theta)
-        y = r * np.sin(theta)
-        shrubs.append(create_irregular_shrub(x, y, radius))
+        shrubs.append(create_irregular_shrub(r * np.cos(theta), r * np.sin(theta), radius))
+        
+    # 2. Generate Small Interstitial/Filler Patches
+    gen_radius_small = plot_radius + r_small[1]
+    for _ in range(int(num_small)):
+        radius = np.random.uniform(r_small[0], r_small[1])
+        r = gen_radius_small * np.sqrt(np.random.uniform(0, 1))
+        theta = np.random.uniform(0, 2 * np.pi)
+        shrubs.append(create_irregular_shrub(r * np.cos(theta), r * np.sin(theta), radius))
+        
     return shrubs
 
 # ====================================================================
@@ -96,30 +101,63 @@ def process_simulation_iteration(task):
     shrub_value = 2
     total_exhaust_length_m = total_valid_pixels * cell_size * 2
     total_nri_length_m = 3 * spoke_length_m
-    
-    E_r_squared = (1**2 + 1*5 + 5**2) / 3
-    mean_patch_area = np.pi * E_r_squared
-    area_ratio = (np.pi * plot_radius**2) / mean_patch_area
 
-    # Shape Generation
-    is_inverted = target_bg <= 50
+    # ==========================================
+    # Shape Generation (Bimodal Fragmentation)
+    # ==========================================
+    if target_bg == 50:
+        is_inverted = False
+    else:
+        is_inverted = target_bg < 50
+        
     target_coverage = target_bg / 100.0 if is_inverted else 1 - (target_bg / 100.0)
     
-    num_shapes = int(-area_ratio * np.log(1 - target_coverage))
-    shapes = generate_random_shrubs(num_shapes, plot_radius)
-    shape_union = unary_union(shapes)
+    lambda_target = -np.log(1 - target_coverage)
+    alpha_large = 0.75
+    lambda_large = lambda_target * alpha_large
+    lambda_small = lambda_target * (1 - alpha_large)
     
-    # Rasterization
+    mean_area_large = np.pi * ((1.0**2 + 1.0*5.0 + 5.0**2) / 3)
+    mean_area_small = np.pi * ((0.1**2 + 0.1*0.5 + 0.5**2) / 3)
+    
+    plot_area = np.pi * plot_radius**2
+    num_large = int(lambda_large * (plot_area / mean_area_large))
+    num_small = int(lambda_small * (plot_area / mean_area_small))
+    
+    shapes = generate_mixed_shrubs(num_large, num_small, plot_radius)
+    
+    # ==========================================
+    # Accelerated Bounding-Box Rasterization
+    # ==========================================
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     
-    if not shape_union.is_empty:
-        geoms = [shape_union] if shape_union.geom_type == 'Polygon' else shape_union.geoms
-        points_flat = np.column_stack((X.flatten(), Y.flatten()))
-        for geom in geoms:
-            if geom.is_empty: continue
-            path = polygon_to_path(geom)
-            inside = path.contains_points(points_flat).reshape(grid_size, grid_size)
-            main_array[inside] = shrub_value
+    for geom in shapes:
+        if geom.is_empty: continue
+        
+        # Get exact bounds of the tiny polygon
+        minx, miny, maxx, maxy = geom.bounds
+        
+        # Translate geographic bounds into array row/col indices (with a 2 pixel buffer)
+        c_min = max(0, int((minx + plot_radius) / cell_size) - 2)
+        c_max = min(grid_size, int((maxx + plot_radius) / cell_size) + 2)
+        r_min = max(0, int((miny + plot_radius) / cell_size) - 2)
+        r_max = min(grid_size, int((maxy + plot_radius) / cell_size) + 2)
+        
+        if c_min >= c_max or r_min >= r_max:
+            continue
+            
+        # Extract only the local grid area right underneath the polygon
+        sub_X = X[r_min:r_max, c_min:c_max]
+        sub_Y = Y[r_min:r_max, c_min:c_max]
+        
+        pts = np.column_stack((sub_X.flatten(), sub_Y.flatten()))
+        path = polygon_to_path(geom)
+        
+        # Check intersections against the localized subgrid only
+        inside = path.contains_points(pts).reshape(sub_X.shape)
+        
+        # Overwrite those localized pixels in the main array
+        main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
             
     if is_inverted:
         main_array = np.where(main_array == target_value, shrub_value, target_value)
@@ -245,7 +283,10 @@ if __name__ == '__main__':
         return 0.0 if m_exact == 0 else (np.mean(np.abs(error)) / m_exact) * 100
 
     def aggregate_metrics(x):
-        d = {'True_BG_Mean': np.mean(x['True_BG_Pct'])}
+        d = {
+            'True_BG_Mean': np.mean(x['True_BG_Pct']),
+            'Exact_Fetch_Mean': np.mean(x['Exact_Fetch'])  # Captured average mean fetch
+        }
         
         # Aggregate BG
         for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
@@ -268,6 +309,14 @@ if __name__ == '__main__':
         return pd.Series(d)
 
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
+
+    # --- PRINT AVERAGE MEAN FETCH TO CONSOLE ---
+    print("\n" + "="*50)
+    print("Average Exact Mean Fetch per Bare Ground Bin")
+    print("="*50)
+    for _, row in mae_df.iterrows():
+        print(f"Target BG: {int(row['BG_Bin'])}%  ->  Mean Fetch: {row['Exact_Fetch_Mean']:.4f} m")
+    print("="*50 + "\n")
 
     # Dynamic Plotting Configuration
     plot_config = [
@@ -345,3 +394,4 @@ if __name__ == '__main__':
     
     mae_df.to_csv(csv_path, index=False)
     print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
+    
