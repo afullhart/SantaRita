@@ -158,7 +158,8 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config):
     # Format MAE Row
     ax_mae.set_title(title, fontsize=15, pad=12)
     ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
-    ax_mae.set_xlim(0, 95)  
+    ax_mae.set_xlim(0, 100)
+    ax_mae.set_xticks(np.arange(0, 81, 20))  
     ax_mae.grid(True, alpha=0.3)
     ax_mae.legend(loc='upper left', fontsize=10) 
     
@@ -173,14 +174,16 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         
     # Format MRE Row
     ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
-    ax_mre.set_xlim(0, 95)  
+    ax_mre.set_xlim(0, 100)
+    ax_mre.set_xticks(np.arange(0, 81, 20))  
     ax_mre.grid(True, alpha=0.3)
     if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
         
     # Format Bias Row
     ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
-    ax_bias.set_xlim(0, 95)  
+    ax_bias.set_xlim(0, 100)  
+    ax_bias.set_xticks(np.arange(0, 81, 20))
     ax_bias.grid(True, alpha=0.3)
     ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
     if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
