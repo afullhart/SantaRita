@@ -83,23 +83,17 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Shape Generation Logic
+    # Unified Monotonic Shrub Coverage Logic
     # ==========================================
-    if target_bg == 50:
-        is_inverted = False
-    else:
-        is_inverted = target_bg < 50
-        
-    target_coverage = target_bg / 100.0 if is_inverted else 1 - (target_bg / 100.0)
-    lambda_target = -np.log(1 - target_coverage)
+    veg_coverage = (100.0 - target_bg) / 100.0
+    lambda_target = -np.log(1 - veg_coverage) if veg_coverage < 0.99 else 5.0
     
-    # 0.25 Split Restored
     alpha_large = 0.25
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
     r_large_bnds = (0.5, 3.0)
-    r_small_bnds = (0.05, 0.15)
+    r_small_bnds = (0.10, 0.30)
     
     mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
     mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
@@ -110,11 +104,8 @@ def process_simulation_iteration(task):
     
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     
-    # ==========================================
     # Rasterize Large Irregular Polygons
-    # ==========================================
     large_shapes = generate_large_shrubs_only(num_large, plot_radius, r_large_bnds)
-    
     for geom in large_shapes:
         if geom.is_empty: continue
         minx, miny, maxx, maxy = geom.bounds
@@ -132,20 +123,14 @@ def process_simulation_iteration(task):
         inside = path.contains_points(pts).reshape(sub_X.shape)
         main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
         
-    # ==========================================
     # Fast NumPy Rasterization for Micro-Filler
-    # ==========================================
-    # Drop physical clumps instantly without using Shapely math
     gen_radius_small = plot_radius + r_small_bnds[1]
-    
-    # Generate arrays of properties for all small patches instantly
     r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
     r_dist = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
     theta_arr = np.random.uniform(0, 2 * np.pi, num_small)
     cx_arr = r_dist * np.cos(theta_arr)
     cy_arr = r_dist * np.sin(theta_arr)
     
-    # Slice arrays based on radius to stamp physical clumps
     for cx, cy, rad in zip(cx_arr, cy_arr, r_small_arr):
         c_min = max(0, int((cx - rad + plot_radius) / cell_size))
         c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
@@ -156,12 +141,8 @@ def process_simulation_iteration(task):
 
         sub_X = X[r_min:r_max, c_min:c_max]
         sub_Y = Y[r_min:r_max, c_min:c_max]
-
         inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
         main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
-            
-    if is_inverted:
-        main_array = np.where(main_array == target_value, shrub_value, target_value)
         
     main_array[~valid_mask] = -9999 
     
@@ -235,12 +216,12 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 150 
+    num_iterations = 19000 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
     
-    target_bgs = np.arange(15, 90, 5)
+    target_bgs = np.arange(5, 100, 5)
     iters_per_bin = max(1, num_iterations // len(target_bgs))
     
     tasks = []
@@ -254,6 +235,7 @@ if __name__ == '__main__':
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
     print(f"Target Bins: {len(target_bgs)}")
+    print(f"Iterations per Bin: {iters_per_bin}")
     print(f"Total Iterations: {total_tasks}")
     print(f"Detected CPU Cores: {cores}")
     print(f"{'='*50}")
@@ -343,17 +325,14 @@ if __name__ == '__main__':
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
             
         ax_mae.set_title(title, fontsize=15, pad=12)
-        ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_mae.grid(True, alpha=0.3)
         ax_mae.legend(loc='upper left', fontsize=10) 
         
         if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
             
-        ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_mre.grid(True, alpha=0.3)
         if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
             
-        ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
         ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
         ax_bias.grid(True, alpha=0.3)
         ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
