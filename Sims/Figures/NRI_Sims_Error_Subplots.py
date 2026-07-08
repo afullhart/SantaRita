@@ -216,7 +216,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 19000 
+    num_iterations = 1900 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -323,6 +323,13 @@ if __name__ == '__main__':
             ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], label=label, **line_kws)
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
+            
+        # ==================================================
+        # EXPLICIT X-AXIS LIMITS & TICKS
+        # ==================================================
+        for ax in [ax_mae, ax_mre, ax_bias]:
+            ax.set_xlim(0, 100)
+            ax.set_xticks(np.arange(0, 81, 20)) # Forces 0, 20, 40, 60, 80, 100 ticks
             
         ax_mae.set_title(title, fontsize=15, pad=12)
         ax_mae.grid(True, alpha=0.3)
