@@ -78,7 +78,6 @@ def process_simulation_iteration(task):
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
-    # 1. Build Exact Boolean Masks for Vegetation
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
     if num_large > 0:
         gen_radius_large = plot_radius + r_large_bnds[1]
@@ -119,44 +118,35 @@ def process_simulation_iteration(task):
             inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
             small_mask[r_min:r_max, c_min:c_max] |= inside
 
-    # 2. Assemble Base Z-Order: Base Bare -> Small Veg -> Large Veg
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     main_array[small_mask] = shrub_value
     main_array[large_mask] = shrub_value
 
-    # 3. Exact Target Correction via Organic Holes (Middle Priority)
-    # We punch holes ONLY through small vegetation, ignoring large vegetation.
     target_bare_pixels = int(total_valid_pixels * (target_bg / 100.0))
     current_bare_pixels = np.sum((main_array == target_value) & valid_mask)
     pixels_to_punch = target_bare_pixels - current_bare_pixels
     
     if pixels_to_punch > 0:
-        # Define the exact pixels that can be legally punched
         punchable_mask = small_mask & ~large_mask & valid_mask
         punchable_count = np.sum(punchable_mask)
         
         if pixels_to_punch >= punchable_count:
-            # Not enough small veg to reach target! Wipe out all punchable small veg.
             main_array[punchable_mask] = target_value
         else:
-            # Generate the Gaussian clumps
             clump_size_m = 0.50
             sigma_pixels = clump_size_m / cell_size
             raw_noise = np.random.rand(grid_size, grid_size)
             blurred_noise = gaussian_filter(raw_noise, sigma=sigma_pixels)
             
-            # Find the exact mathematical threshold ONLY among the punchable pixels
             punchable_noise = blurred_noise[punchable_mask]
             fraction_to_punch = pixels_to_punch / punchable_count
             threshold = np.percentile(punchable_noise, (1 - fraction_to_punch) * 100)
             
-            # Apply the organic holes exclusively to the legal area
             hole_mask = punchable_mask & (blurred_noise >= threshold)
             main_array[hole_mask] = target_value
 
     main_array[~valid_mask] = -9999 
     
-    # Exact 2D Metrics
     is_bare_full = (main_array == target_value)
     bare_pixels = np.sum(is_bare_full[valid_mask])
     true_bg_pct = (bare_pixels / total_valid_pixels) * 100
@@ -165,7 +155,6 @@ def process_simulation_iteration(task):
     valid_full_fetch = dist_array[valid_mask]
     exact_fetch = np.mean(valid_full_fetch) if valid_full_fetch.size > 0 else 0.0
     
-    # VECTORIZED 2D GAP CALCULATION (Massive Speedup)
     is_bare_masked = np.where(valid_mask, is_bare_full, False)
     
     padded_rows = np.pad(is_bare_masked, ((0, 0), (1, 1)), constant_values=False)
@@ -206,14 +195,41 @@ def process_simulation_iteration(task):
         all_fetch_vals.append(dist_array[rows, cols])
         
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
+    
+    # ========================================================================
+    # EXPLICIT INTERVAL ASSUMPTION & FOOTPRINT INFLATION
+    # This mathematically simulates how physical observer footprints or GIS
+    # extractions stretch tiny patches into large interval blocks, causing the
+    # massive overestimation you observed at the 200cm scale in the drone data.
+    # ========================================================================
     for label, step in bg_intervals.items():
         if step == 1:
+            # 0cm is perfectly continuous and unbiased
             total_nri_pixels = sum(len(t) for t in all_nri_transects)
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            sampled_pixels = np.concatenate([t[::step] for t in all_nri_transects])
-            sampled_bg = (np.sum(sampled_pixels == target_value) / len(sampled_pixels)) * 100 if len(sampled_pixels) > 0 else 0.0
+            # For discrete scales, give the point a footprint that scales with the interval.
+            # E.g., at 200cm, the point acts like a wide physical boot or buffered zone.
+            footprint_radius = int(step * 0.35) 
+            
+            # The "See-Saw" Flip: Observers/Buffers inflate whatever is the MINORITY class.
+            stretch_value = target_value if true_bg_pct <= 50 else shrub_value
+            
+            sampled_pixels_inflated = []
+            for t in all_nri_transects:
+                for i in range(0, len(t), step):
+                    start = max(0, i - footprint_radius)
+                    end = min(len(t), i + footprint_radius + 1)
+                    # If the minority class is anywhere in the footprint, it stretches to take the hit!
+                    if stretch_value in t[start:end]:
+                        sampled_pixels_inflated.append(stretch_value)
+                    else:
+                        sampled_pixels_inflated.append(t[i])
+                        
+            sampled_pixels_arr = np.array(sampled_pixels_inflated)
+            sampled_bg = (np.sum(sampled_pixels_arr == target_value) / len(sampled_pixels_arr)) * 100 if len(sampled_pixels_arr) > 0 else 0.0
+            
         res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
         
     fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
