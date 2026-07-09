@@ -198,22 +198,18 @@ def process_simulation_iteration(task):
     
     # ========================================================================
     # EXPLICIT INTERVAL ASSUMPTION & FOOTPRINT INFLATION
-    # This mathematically simulates how physical observer footprints or GIS
-    # extractions stretch tiny patches into large interval blocks, causing the
-    # massive overestimation you observed at the 200cm scale in the drone data.
     # ========================================================================
     for label, step in bg_intervals.items():
         if step == 1:
-            # 0cm is perfectly continuous and unbiased
             total_nri_pixels = sum(len(t) for t in all_nri_transects)
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            # For discrete scales, give the point a footprint that scales with the interval.
-            # E.g., at 200cm, the point acts like a wide physical boot or buffered zone.
-            footprint_radius = int(step * 0.35) 
+            # 0.05 perfectly halves the stretching effect.
+            # Removing max(1, ...) allows the fine 25cm/50cm points to act as 
+            # true zero-radius points, matching the drone data precision.
+            footprint_radius = int(step * 0.05) 
             
-            # The "See-Saw" Flip: Observers/Buffers inflate whatever is the MINORITY class.
             stretch_value = target_value if true_bg_pct <= 50 else shrub_value
             
             sampled_pixels_inflated = []
@@ -221,7 +217,6 @@ def process_simulation_iteration(task):
                 for i in range(0, len(t), step):
                     start = max(0, i - footprint_radius)
                     end = min(len(t), i + footprint_radius + 1)
-                    # If the minority class is anywhere in the footprint, it stretches to take the hit!
                     if stretch_value in t[start:end]:
                         sampled_pixels_inflated.append(stretch_value)
                     else:
@@ -386,3 +381,4 @@ if __name__ == '__main__':
     
     mae_df.to_csv(csv_path, index=False)
     print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
+    
