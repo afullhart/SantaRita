@@ -4,45 +4,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
-from shapely.geometry import Polygon
 from scipy.ndimage import distance_transform_edt
-from matplotlib.path import Path
 
 # ====================================================================
 # 1. HELPER FUNCTIONS
 # ====================================================================
-def polygon_to_path(polygon):
-    vertices = list(polygon.exterior.coords)
-    codes = [Path.MOVETO] + [Path.LINETO] * (len(vertices) - 2) + [Path.CLOSEPOLY]
-    for interior in polygon.interiors:
-        interior_vertices = list(interior.coords)
-        vertices.extend(interior_vertices)
-        codes.extend([Path.MOVETO] + [Path.LINETO] * (len(interior_vertices) - 2) + [Path.CLOSEPOLY])
-    return Path(vertices, codes)
-
 def get_gap_lengths(transect_array, gap_val, p_size):
     padded = np.concatenate(([False], (transect_array == gap_val), [False]))
     diffs = np.diff(padded.astype(int))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
     return (ends - starts) * p_size
-
-def create_irregular_shrub(center_x, center_y, base_radius, num_points=12):
-    angles = np.linspace(0, 2 * np.pi, num_points, endpoint=False)
-    points = []
-    for angle in angles:
-        r = base_radius * np.random.uniform(0.6, 1.4)
-        points.append((center_x + r * np.cos(angle), center_y + r * np.sin(angle)))
-    return Polygon(points)
-
-def generate_large_shrubs_only(num_large, plot_radius, r_large=(0.5, 3.0)): 
-    shrubs = []
-    gen_radius_large = plot_radius + r_large[1]
-    for _ in range(int(num_large)):
-        radius = np.random.uniform(r_large[0], r_large[1])
-        r = gen_radius_large * np.sqrt(np.random.uniform(0, 1))
-        theta = np.random.uniform(0, 2 * np.pi)
-        shrubs.append(create_irregular_shrub(r * np.cos(theta), r * np.sin(theta), radius))
-    return shrubs
 
 # ====================================================================
 # 2. ISOLATED WORKER FUNCTION
@@ -83,7 +54,7 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Unified Monotonic Shrub Coverage Logic
+    # Porous Monotonic Shrub Coverage Logic
     # ==========================================
     veg_coverage = (100.0 - target_bg) / 100.0
     lambda_target = -np.log(1 - veg_coverage) if veg_coverage < 0.99 else 5.0
@@ -95,43 +66,34 @@ def process_simulation_iteration(task):
     r_large_bnds = (0.5, 3.0)
     r_small_bnds = (0.10, 0.30)
     
-    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
-    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
+    # Define canopy densities to create porosity (micro-gaps)
+    density_large = 0.75 
+    density_small = 0.55 
+    
+    # Adjust expected area to compensate for the holes in the canopies
+    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3) * density_large
+    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3) * density_small
     
     plot_area = np.pi * plot_radius**2
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
+    # NEW: Convert a fraction of large shrubs into solid Bare Patches.
+    # Rare at low BG (mostly driven by the 1% base factor), more common at high BG (driven by the +40 scaling factor).
+    num_large_bare = int(num_large * 0.01) + int((target_bg / 100.0) * 40)
+    num_large_veg = max(0, num_large - num_large_bare)
+
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     
-    # Rasterize Large Irregular Polygons
-    large_shapes = generate_large_shrubs_only(num_large, plot_radius, r_large_bnds)
-    for geom in large_shapes:
-        if geom.is_empty: continue
-        minx, miny, maxx, maxy = geom.bounds
-        c_min = max(0, int((minx + plot_radius) / cell_size) - 2)
-        c_max = min(grid_size, int((maxx + plot_radius) / cell_size) + 2)
-        r_min = max(0, int((miny + plot_radius) / cell_size) - 2)
-        r_max = min(grid_size, int((maxy + plot_radius) / cell_size) + 2)
-        
-        if c_min >= c_max or r_min >= r_max: continue
-            
-        sub_X = X[r_min:r_max, c_min:c_max]
-        sub_Y = Y[r_min:r_max, c_min:c_max]
-        pts = np.column_stack((sub_X.flatten(), sub_Y.flatten()))
-        path = polygon_to_path(geom)
-        inside = path.contains_points(pts).reshape(sub_X.shape)
-        main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
-        
-    # Fast NumPy Rasterization for Micro-Filler
-    gen_radius_small = plot_radius + r_small_bnds[1]
-    r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-    r_dist = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
-    theta_arr = np.random.uniform(0, 2 * np.pi, num_small)
-    cx_arr = r_dist * np.cos(theta_arr)
-    cy_arr = r_dist * np.sin(theta_arr)
+    # --- 1. Fast NumPy Rasterization for Large Porous Shrubs ---
+    gen_radius_large = plot_radius + r_large_bnds[1]
+    r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_veg)
+    r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_veg))
+    theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large_veg)
+    cx_arr_L = r_dist_L * np.cos(theta_arr_L)
+    cy_arr_L = r_dist_L * np.sin(theta_arr_L)
     
-    for cx, cy, rad in zip(cx_arr, cy_arr, r_small_arr):
+    for cx, cy, rad in zip(cx_arr_L, cy_arr_L, r_large_arr):
         c_min = max(0, int((cx - rad + plot_radius) / cell_size))
         c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
         r_min = max(0, int((cy - rad + plot_radius) / cell_size))
@@ -141,8 +103,58 @@ def process_simulation_iteration(task):
 
         sub_X = X[r_min:r_max, c_min:c_max]
         sub_Y = Y[r_min:r_max, c_min:c_max]
+        
         inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-        main_array[r_min:r_max, c_min:c_max][inside] = shrub_value
+        porous = np.random.rand(*sub_X.shape) < density_large
+        
+        main_array[r_min:r_max, c_min:c_max][inside & porous] = shrub_value
+
+    # --- 2. Fast NumPy Rasterization for Small Porous Shrubs (Filler) ---
+    gen_radius_small = plot_radius + r_small_bnds[1]
+    r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+    r_dist_S = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
+    theta_arr_S = np.random.uniform(0, 2 * np.pi, num_small)
+    cx_arr_S = r_dist_S * np.cos(theta_arr_S)
+    cy_arr_S = r_dist_S * np.sin(theta_arr_S)
+    
+    for cx, cy, rad in zip(cx_arr_S, cy_arr_S, r_small_arr):
+        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+
+        if c_min >= c_max or r_min >= r_max: continue
+
+        sub_X = X[r_min:r_max, c_min:c_max]
+        sub_Y = Y[r_min:r_max, c_min:c_max]
+        
+        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+        porous = np.random.rand(*sub_X.shape) < density_small
+        
+        main_array[r_min:r_max, c_min:c_max][inside & porous] = shrub_value
+
+    # --- 3. Fast NumPy Rasterization for Solid Large Bare Patches ---
+    # Drawn last to explicitly punch solid holes through the vegetation canopy
+    r_bare_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_bare)
+    r_dist_B = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_bare))
+    theta_arr_B = np.random.uniform(0, 2 * np.pi, num_large_bare)
+    cx_arr_B = r_dist_B * np.cos(theta_arr_B)
+    cy_arr_B = r_dist_B * np.sin(theta_arr_B)
+    
+    for cx, cy, rad in zip(cx_arr_B, cy_arr_B, r_bare_arr):
+        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+
+        if c_min >= c_max or r_min >= r_max: continue
+
+        sub_X = X[r_min:r_max, c_min:c_max]
+        sub_Y = Y[r_min:r_max, c_min:c_max]
+        
+        # No porosity filter applied; perfectly solid target_value (Bare Ground)
+        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+        main_array[r_min:r_max, c_min:c_max][inside] = target_value
         
     main_array[~valid_mask] = -9999 
     
@@ -216,7 +228,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 1900 
+    num_iterations = 19000 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -307,7 +319,7 @@ if __name__ == '__main__':
     }
 
     fig, axes = plt.subplots(3, 7, figsize=(28, 12), constrained_layout=True)
-    fig.suptitle("Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig.suptitle("Porous Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
     for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         ax_mae = axes[0, col]
@@ -324,12 +336,9 @@ if __name__ == '__main__':
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
             
-        # ==================================================
-        # EXPLICIT X-AXIS LIMITS & TICKS
-        # ==================================================
         for ax in [ax_mae, ax_mre, ax_bias]:
             ax.set_xlim(0, 100)
-            ax.set_xticks(np.arange(0, 81, 20)) # Forces 0, 20, 40, 60, 80, 100 ticks
+            ax.set_xticks(np.arange(0, 81, 20)) 
             
         ax_mae.set_title(title, fontsize=15, pad=12)
         ax_mae.grid(True, alpha=0.3)
@@ -346,8 +355,8 @@ if __name__ == '__main__':
         if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(script_dir, 'Full_Simulation_Metrics_MultiScale.png')
-    csv_path = os.path.join(script_dir, 'Full_Simulation_Metrics_MultiScale.csv')
+    img_path = os.path.join(script_dir, 'Porous_Simulation_Metrics_MultiScale.png')
+    csv_path = os.path.join(script_dir, 'Porous_Simulation_Metrics_MultiScale.csv')
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
