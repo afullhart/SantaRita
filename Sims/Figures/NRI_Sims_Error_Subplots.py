@@ -4,12 +4,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
-from scipy.ndimage import distance_transform_edt
+from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 # ====================================================================
 # 1. HELPER FUNCTIONS
 # ====================================================================
 def get_gap_lengths(transect_array, gap_val, p_size):
+    # Only used for the 3 NRI diagonals now; 2D exhaustive is vectorized
     padded = np.concatenate(([False], (transect_array == gap_val), [False]))
     diffs = np.diff(padded.astype(int))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
@@ -66,11 +67,9 @@ def process_simulation_iteration(task):
     r_large_bnds = (0.5, 3.0)
     r_small_bnds = (0.10, 0.30)
     
-    # Define canopy densities to create porosity (micro-gaps)
     density_large = 0.75 
     density_small = 0.55 
     
-    # Adjust expected area to compensate for the holes in the canopies
     mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3) * density_large
     mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3) * density_small
     
@@ -78,84 +77,90 @@ def process_simulation_iteration(task):
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
-    # NEW: Convert a fraction of large shrubs into solid Bare Patches.
-    # Rare at low BG (mostly driven by the 1% base factor), more common at high BG (driven by the +40 scaling factor).
     num_large_bare = int(num_large * 0.01) + int((target_bg / 100.0) * 40)
     num_large_veg = max(0, num_large - num_large_bare)
 
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     
-    # --- 1. Fast NumPy Rasterization for Large Porous Shrubs ---
+    clump_size_m = 0.20
+    sigma_pixels = clump_size_m / cell_size
+    
+    # --- OPTIMIZATION 1: Global Porosity Maps ---
+    # Generate the noise once, blur it once, and threshold it globally.
+    global_noise = np.random.rand(grid_size, grid_size)
+    global_blurred = gaussian_filter(global_noise, sigma=sigma_pixels)
+    
+    porous_large_mask = global_blurred >= np.percentile(global_blurred, (1 - density_large) * 100)
+    porous_small_mask = global_blurred >= np.percentile(global_blurred, (1 - density_small) * 100)
+    
+    # --- OPTIMIZATION 2: Mask Aggregation for Shrubs ---
+    large_shrub_mask = np.zeros((grid_size, grid_size), dtype=bool)
     gen_radius_large = plot_radius + r_large_bnds[1]
-    r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_veg)
-    r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_veg))
-    theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large_veg)
-    cx_arr_L = r_dist_L * np.cos(theta_arr_L)
-    cy_arr_L = r_dist_L * np.sin(theta_arr_L)
     
-    for cx, cy, rad in zip(cx_arr_L, cy_arr_L, r_large_arr):
-        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-
-        if c_min >= c_max or r_min >= r_max: continue
-
-        sub_X = X[r_min:r_max, c_min:c_max]
-        sub_Y = Y[r_min:r_max, c_min:c_max]
+    if num_large_veg > 0:
+        r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_veg)
+        r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_veg))
+        theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large_veg)
+        cx_arr_L = r_dist_L * np.cos(theta_arr_L)
+        cy_arr_L = r_dist_L * np.sin(theta_arr_L)
         
-        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-        porous = np.random.rand(*sub_X.shape) < density_large
-        
-        main_array[r_min:r_max, c_min:c_max][inside & porous] = shrub_value
+        for cx, cy, rad in zip(cx_arr_L, cy_arr_L, r_large_arr):
+            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+            if c_min >= c_max or r_min >= r_max: continue
+            
+            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+            large_shrub_mask[r_min:r_max, c_min:c_max] |= inside # Bitwise OR aggregation
 
-    # --- 2. Fast NumPy Rasterization for Small Porous Shrubs (Filler) ---
+    # Apply global porosity instantly to all large shrubs
+    main_array[large_shrub_mask & porous_large_mask] = shrub_value
+
+    # Repeat for Small Shrubs
+    small_shrub_mask = np.zeros((grid_size, grid_size), dtype=bool)
     gen_radius_small = plot_radius + r_small_bnds[1]
-    r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-    r_dist_S = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
-    theta_arr_S = np.random.uniform(0, 2 * np.pi, num_small)
-    cx_arr_S = r_dist_S * np.cos(theta_arr_S)
-    cy_arr_S = r_dist_S * np.sin(theta_arr_S)
     
-    for cx, cy, rad in zip(cx_arr_S, cy_arr_S, r_small_arr):
-        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-
-        if c_min >= c_max or r_min >= r_max: continue
-
-        sub_X = X[r_min:r_max, c_min:c_max]
-        sub_Y = Y[r_min:r_max, c_min:c_max]
+    if num_small > 0:
+        r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+        r_dist_S = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
+        theta_arr_S = np.random.uniform(0, 2 * np.pi, num_small)
+        cx_arr_S = r_dist_S * np.cos(theta_arr_S)
+        cy_arr_S = r_dist_S * np.sin(theta_arr_S)
         
-        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-        porous = np.random.rand(*sub_X.shape) < density_small
-        
-        main_array[r_min:r_max, c_min:c_max][inside & porous] = shrub_value
+        for cx, cy, rad in zip(cx_arr_S, cy_arr_S, r_small_arr):
+            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+            if c_min >= c_max or r_min >= r_max: continue
+            
+            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+            small_shrub_mask[r_min:r_max, c_min:c_max] |= inside
+            
+    main_array[small_shrub_mask & porous_small_mask] = shrub_value
 
-    # --- 3. Fast NumPy Rasterization for Solid Large Bare Patches ---
-    # Drawn last to explicitly punch solid holes through the vegetation canopy
-    r_bare_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_bare)
-    r_dist_B = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_bare))
-    theta_arr_B = np.random.uniform(0, 2 * np.pi, num_large_bare)
-    cx_arr_B = r_dist_B * np.cos(theta_arr_B)
-    cy_arr_B = r_dist_B * np.sin(theta_arr_B)
-    
-    for cx, cy, rad in zip(cx_arr_B, cy_arr_B, r_bare_arr):
-        c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-        c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-        r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-        r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-
-        if c_min >= c_max or r_min >= r_max: continue
-
-        sub_X = X[r_min:r_max, c_min:c_max]
-        sub_Y = Y[r_min:r_max, c_min:c_max]
+    # Overwrite solid bare patches
+    if num_large_bare > 0:
+        r_bare_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_bare)
+        r_dist_B = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_bare))
+        theta_arr_B = np.random.uniform(0, 2 * np.pi, num_large_bare)
+        cx_arr_B = r_dist_B * np.cos(theta_arr_B)
+        cy_arr_B = r_dist_B * np.sin(theta_arr_B)
         
-        # No porosity filter applied; perfectly solid target_value (Bare Ground)
-        inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-        main_array[r_min:r_max, c_min:c_max][inside] = target_value
-        
+        for cx, cy, rad in zip(cx_arr_B, cy_arr_B, r_bare_arr):
+            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+            if c_min >= c_max or r_min >= r_max: continue
+            
+            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+            main_array[r_min:r_max, c_min:c_max][inside] = target_value
+
     main_array[~valid_mask] = -9999 
     
     # Exact 2D Metrics
@@ -167,14 +172,26 @@ def process_simulation_iteration(task):
     valid_full_fetch = dist_array[valid_mask]
     exact_fetch = np.mean(valid_full_fetch) if valid_full_fetch.size > 0 else 0.0
     
-    exhaust_gap_arrays = []
-    masked_for_gaps = np.where(valid_mask, main_array, -9999)
-    for r in range(grid_size):
-        exhaust_gap_arrays.append(get_gap_lengths(masked_for_gaps[r, :], target_value, cell_size))
-    for c in range(grid_size):
-        exhaust_gap_arrays.append(get_gap_lengths(masked_for_gaps[:, c], target_value, cell_size))
-        
-    all_exhaust_gaps = np.concatenate(exhaust_gap_arrays)
+    # --- OPTIMIZATION 3: Vectorized 2D Gap Calculation ---
+    # Instead of looping 4,400 times, we calculate all gaps instantly using array diffs
+    is_bare_masked = np.where(valid_mask, is_bare_full, False)
+    
+    # Calculate all row gaps
+    padded_rows = np.pad(is_bare_masked, ((0, 0), (1, 1)), constant_values=False)
+    diff_rows = np.diff(padded_rows.astype(int), axis=1)
+    row_starts = np.where(diff_rows == 1)
+    row_ends = np.where(diff_rows == -1)
+    row_gaps = (row_ends[1] - row_starts[1]) * cell_size
+    
+    # Calculate all col gaps
+    padded_cols = np.pad(is_bare_masked, ((1, 1), (0, 0)), constant_values=False)
+    diff_cols = np.diff(padded_cols.astype(int), axis=0)
+    col_starts = np.where(diff_cols == 1)
+    col_ends = np.where(diff_cols == -1)
+    col_gaps = (col_ends[0] - col_starts[0]) * cell_size
+    
+    all_exhaust_gaps = np.concatenate([row_gaps, col_gaps])
+    
     ex_0_24 = (np.sum(all_exhaust_gaps[all_exhaust_gaps < 0.25]) / total_exhaust_length_m) * 100
     ex_25_50 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.25) & (all_exhaust_gaps <= 0.50)]) / total_exhaust_length_m) * 100
     ex_51_100 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.51) & (all_exhaust_gaps <= 1.00)]) / total_exhaust_length_m) * 100
@@ -224,9 +241,7 @@ def process_simulation_iteration(task):
     
     return res
 
-# ====================================================================
-# 3. MAIN EXECUTION BLOCK 
-# ====================================================================
+# ... (The entire main execution block remains exactly the same) ...
 if __name__ == '__main__':
     num_iterations = 19000 
     plot_radius = 55
