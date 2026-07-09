@@ -64,6 +64,7 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
+    # Locked at 0.25 to ensure small vegetation ALWAYS persists across the gradient
     alpha_large = 0.25
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
@@ -133,16 +134,21 @@ def process_simulation_iteration(task):
         if pixels_to_punch >= punchable_count:
             main_array[punchable_mask] = target_value
         else:
-            clump_size_m = 0.50
-            sigma_pixels = clump_size_m / cell_size
-            raw_noise = np.random.rand(grid_size, grid_size)
-            blurred_noise = gaussian_filter(raw_noise, sigma=sigma_pixels)
+            # MULTI-SCALE FRACTAL NOISE
+            # Combines 1.25m macro-voids with 25cm jagged micro-edges
+            raw_fine = np.random.rand(grid_size, grid_size)
+            raw_coarse = np.random.rand(grid_size, grid_size)
             
-            punchable_noise = blurred_noise[punchable_mask]
+            blurred_fine = gaussian_filter(raw_fine, sigma=(0.25 / cell_size))
+            blurred_coarse = gaussian_filter(raw_coarse, sigma=(1.25 / cell_size))
+            
+            fractal_noise = (0.65 * blurred_coarse) + (0.35 * blurred_fine)
+            
+            punchable_noise = fractal_noise[punchable_mask]
             fraction_to_punch = pixels_to_punch / punchable_count
             threshold = np.percentile(punchable_noise, (1 - fraction_to_punch) * 100)
             
-            hole_mask = punchable_mask & (blurred_noise >= threshold)
+            hole_mask = punchable_mask & (fractal_noise >= threshold)
             main_array[hole_mask] = target_value
 
     main_array[~valid_mask] = -9999 
@@ -205,11 +211,7 @@ def process_simulation_iteration(task):
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            # 0.05 perfectly halves the stretching effect.
-            # Removing max(1, ...) allows the fine 25cm/50cm points to act as 
-            # true zero-radius points, matching the drone data precision.
             footprint_radius = int(step * 0.05) 
-            
             stretch_value = target_value if true_bg_pct <= 50 else shrub_value
             
             sampled_pixels_inflated = []
@@ -309,7 +311,9 @@ if __name__ == '__main__':
             
         return pd.Series(d)
 
+    # Calculate aggregations and SORT the dataframe to ensure lines don't zig-zag
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
+    mae_df = mae_df.sort_values('True_BG_Mean').reset_index(drop=True)
 
     print("\n" + "="*50)
     print("Average Exact Mean Fetch per Bare Ground Bin")
@@ -381,4 +385,3 @@ if __name__ == '__main__':
     
     mae_df.to_csv(csv_path, index=False)
     print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
-    
