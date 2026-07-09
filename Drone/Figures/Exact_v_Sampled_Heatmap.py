@@ -1,48 +1,73 @@
 import pandas as pd
 import numpy as np
+import scipy.stats as stats
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# 1. Load your pre-calculated exact vs sampled metrics
-df = pd.read_csv(r"C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Metrics.csv")
+# 1. Load the raw dataset
+df = pd.read_csv(r"C:\Users\andre\ScatterPlots\SRER_NRI_Plots_110m.csv")
 
-# 2. Corrected Helper functions
-def get_scale(y_col):
-    if 'Gap' in y_col: 
-        return '0cm'  # All gaps strictly use the 0cm baseline sampling scale
-    elif '25cm' in y_col: 
-        return '25cm'
-    elif '50cm' in y_col: 
-        return '50cm'
-    elif '100cm' in y_col: 
-        return '100cm'
-    elif '200cm' in y_col: 
-        return '200cm'
-    elif '0cm' in y_col: 
-        return '0cm'
-    return 'Unknown'
+# 2. Define the metrics mapping to calculate the stats dynamically
+metrics_info = {
+    'BGR': {'exact': 'Exact_BGR_Pct', 'nri_pattern': 'NRI_BGR_{scale}_Pct'},
+    'Herb': {'exact': 'Exact_Herb_Pct', 'nri_pattern': 'NRI_Herb_{scale}_Pct'},
+    'Woody': {'exact': 'Exact_Woody_Pct', 'nri_pattern': 'NRI_Woody_{scale}_Pct'},
+    'Herb_Woody_Ratio': {'exact': 'Exact_Herb_Woody_Ratio', 'nri_pattern': 'NRI_HW_Ratio_{scale}'},
+    'Fetch': {'exact': 'Exact_Fetch_m', 'nri_pattern': 'NRI_Fetch_{scale}'},
+    'Gap_0_24': {'exact': 'Exact_Gap_0_24', 'nri_pattern': 'NRI_Gap_0_24', 'is_gap': True},
+    'Gap_25_50': {'exact': 'Exact_Gap_25_50', 'nri_pattern': 'NRI_Gap_25_50', 'is_gap': True},
+    'Gap_51_100': {'exact': 'Exact_Gap_51_100', 'nri_pattern': 'NRI_Gap_51_100', 'is_gap': True},
+    'Gap_101_200': {'exact': 'Exact_Gap_101_200', 'nri_pattern': 'NRI_Gap_101_200', 'is_gap': True},
+    'Gap_gt_200': {'exact': 'Exact_Gap_gt_200', 'nri_pattern': 'NRI_Gap_gt_200', 'is_gap': True},
+}
 
-def get_base_metric(x_col):
-    return x_col.replace('Exact_', '').replace('_Pct', '').replace('_m', '')
+scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
+results = []
 
-df['Scale'] = df['Y_Column'].apply(get_scale)
-df['Metric'] = df['X_Column'].apply(get_base_metric)
+# 3. Calculate Pearson r and Sen's Slope for all valid pairs
+for metric, info in metrics_info.items():
+    exact_col = info['exact']
+    
+    if info.get('is_gap'):
+        # Gaps use only the 0cm baseline (No specific scale suffix)
+        nri_col = info['nri_pattern']
+        if exact_col in df.columns and nri_col in df.columns:
+            # Filter out NaNs for the calculation
+            valid_idx = df[exact_col].notna() & df[nri_col].notna()
+            x = df.loc[valid_idx, exact_col]
+            y = df.loc[valid_idx, nri_col]
+            
+            if len(x) > 1: # Need at least 2 points to calculate correlation
+                r, _ = stats.pearsonr(x, y)
+                sens, _, _, _ = stats.theilslopes(y, x)
+                results.append({'Metric': metric, 'Scale': '0cm', 'r': r, 'Sens_Slope': sens})
+    else:
+        # Check across all specified scales (0cm, 25cm, 50cm, etc.)
+        for scale in scales:
+            nri_col = info['nri_pattern'].format(scale=scale)
+            if exact_col in df.columns and nri_col in df.columns:
+                valid_idx = df[exact_col].notna() & df[nri_col].notna()
+                x = df.loc[valid_idx, exact_col]
+                y = df.loc[valid_idx, nri_col]
+                
+                if len(x) > 1:
+                    r, _ = stats.pearsonr(x, y)
+                    sens, _, _, _ = stats.theilslopes(y, x)
+                    results.append({'Metric': metric, 'Scale': scale, 'r': r, 'Sens_Slope': sens})
 
-# 3. Calculate Pearson r from R2
-df['r'] = np.sqrt(df['R2']) * np.sign(df['OLS_Slope'])
+# Create a DataFrame from the calculated results
+res_df = pd.DataFrame(results)
 
 # 4. Pivot the data
-r_pivot = df.pivot(index='Metric', columns='Scale', values='r')
-sens_pivot = df.pivot(index='Metric', columns='Scale', values='Sens_Slope')
+r_pivot = res_df.pivot(index='Metric', columns='Scale', values='r')
+sens_pivot = res_df.pivot(index='Metric', columns='Scale', values='Sens_Slope')
 
-# 5. Reorder indices (Includes the new 25cm and 200cm scales)
+# 5. Reorder indices to match your desired plotting order
 metric_order = ['BGR', 'Herb', 'Woody', 'Herb_Woody_Ratio', 'Fetch', 'Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
 scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
 
-r_pivot = r_pivot.reindex(index=[m for m in metric_order if m in r_pivot.index], 
-                          columns=[s for s in scale_order if s in r_pivot.columns])
-sens_pivot = sens_pivot.reindex(index=[m for m in metric_order if m in sens_pivot.index], 
-                                columns=[s for s in scale_order if s in sens_pivot.columns])
+r_pivot = r_pivot.reindex(index=[m for m in metric_order if m in r_pivot.index], columns=scale_order)
+sens_pivot = sens_pivot.reindex(index=[m for m in metric_order if m in sens_pivot.index], columns=scale_order)
 
 
 # ====================================================================
@@ -64,21 +89,19 @@ fig, axes = plt.subplots(1, 2, figsize=(16, 6))
 
 # Left Plot: Pearson r
 sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes[0], 
-            cbar_kws={'label': 'Pearson $r$'},
-            mask=r_pivot.isnull()) 
-add_strikes(axes[0], r_pivot)  # Apply strikes to empty cells
+            cbar_kws={'label': 'Pearson $r$'}, mask=r_pivot.isnull()) 
+add_strikes(axes[0], r_pivot)  
 axes[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=15, fontweight='bold')
 axes[0].set_ylabel('Ground Cover Metric', fontweight='bold')
-axes[0].set_xlabel('NRI Transect Sampling Scale', fontweight='bold') # Updated label
+axes[0].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
 
 # Right Plot: Sen's Slope
 sns.heatmap(sens_pivot, annot=True, fmt=".2f", cmap="vlag", center=1.0, ax=axes[1], 
-            cbar_kws={'label': "Sen's Slope"},
-            mask=sens_pivot.isnull()) 
-add_strikes(axes[1], sens_pivot)  # Apply strikes to empty cells
+            cbar_kws={'label': "Sen's Slope"}, mask=sens_pivot.isnull()) 
+add_strikes(axes[1], sens_pivot)  
 axes[1].set_title("Sen's Slope\nExact vs Sampled (1.0 = Perfect 1:1)", pad=15, fontweight='bold')
 axes[1].set_ylabel('')
-axes[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold') # Updated label
+axes[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
 
 plt.tight_layout()
 plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.png', dpi=300, bbox_inches='tight')
