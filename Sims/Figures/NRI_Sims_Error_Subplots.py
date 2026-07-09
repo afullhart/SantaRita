@@ -10,7 +10,6 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter
 # 1. HELPER FUNCTIONS
 # ====================================================================
 def get_gap_lengths(transect_array, gap_val, p_size):
-    # Only used for the 3 NRI diagonals now; 2D exhaustive is vectorized
     padded = np.concatenate(([False], (transect_array == gap_val), [False]))
     diffs = np.diff(padded.astype(int))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
@@ -24,9 +23,10 @@ def process_simulation_iteration(task):
     
     np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
 
-    grid_size = int((plot_radius * 2) / cell_size)
-    x = np.linspace(-plot_radius, plot_radius, grid_size)
-    y = np.linspace(-plot_radius, plot_radius, grid_size)
+    # EXACT grid coordinates to prevent sub-pixel aliasing drift along the sampling rays
+    x = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
+    y = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
+    grid_size = len(x)
     X, Y = np.meshgrid(x, y)
     
     dist_from_center = np.sqrt(X**2 + Y**2)
@@ -55,10 +55,14 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Porous Monotonic Shrub Coverage Logic
+    # Z-INDEXED HYBRID LOGIC 
+    # Top Priority: Large Veg -> Middle: Organic Holes -> Bottom: Small Veg
     # ==========================================
-    veg_coverage = (100.0 - target_bg) / 100.0
-    lambda_target = -np.log(1 - veg_coverage) if veg_coverage < 0.99 else 5.0
+    organic_weight = 0.60
+    organic_bg_pct = target_bg * organic_weight
+    
+    initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
+    lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
     alpha_large = 0.25
     lambda_large = lambda_target * alpha_large
@@ -67,40 +71,20 @@ def process_simulation_iteration(task):
     r_large_bnds = (0.5, 3.0)
     r_small_bnds = (0.10, 0.30)
     
-    density_large = 0.75 
-    density_small = 0.55 
-    
-    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3) * density_large
-    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3) * density_small
+    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
+    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
     
     plot_area = np.pi * plot_radius**2
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
-    num_large_bare = int(num_large * 0.01) + int((target_bg / 100.0) * 40)
-    num_large_veg = max(0, num_large - num_large_bare)
-
-    main_array = np.full((grid_size, grid_size), target_value, dtype=int)
-    
-    clump_size_m = 0.20
-    sigma_pixels = clump_size_m / cell_size
-    
-    # --- OPTIMIZATION 1: Global Porosity Maps ---
-    # Generate the noise once, blur it once, and threshold it globally.
-    global_noise = np.random.rand(grid_size, grid_size)
-    global_blurred = gaussian_filter(global_noise, sigma=sigma_pixels)
-    
-    porous_large_mask = global_blurred >= np.percentile(global_blurred, (1 - density_large) * 100)
-    porous_small_mask = global_blurred >= np.percentile(global_blurred, (1 - density_small) * 100)
-    
-    # --- OPTIMIZATION 2: Mask Aggregation for Shrubs ---
-    large_shrub_mask = np.zeros((grid_size, grid_size), dtype=bool)
-    gen_radius_large = plot_radius + r_large_bnds[1]
-    
-    if num_large_veg > 0:
-        r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_veg)
-        r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_veg))
-        theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large_veg)
+    # 1. Build Exact Boolean Masks for Vegetation
+    large_mask = np.zeros((grid_size, grid_size), dtype=bool)
+    if num_large > 0:
+        gen_radius_large = plot_radius + r_large_bnds[1]
+        r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
+        r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large))
+        theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large)
         cx_arr_L = r_dist_L * np.cos(theta_arr_L)
         cy_arr_L = r_dist_L * np.sin(theta_arr_L)
         
@@ -113,16 +97,11 @@ def process_simulation_iteration(task):
             
             sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
             inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-            large_shrub_mask[r_min:r_max, c_min:c_max] |= inside # Bitwise OR aggregation
+            large_mask[r_min:r_max, c_min:c_max] |= inside
 
-    # Apply global porosity instantly to all large shrubs
-    main_array[large_shrub_mask & porous_large_mask] = shrub_value
-
-    # Repeat for Small Shrubs
-    small_shrub_mask = np.zeros((grid_size, grid_size), dtype=bool)
-    gen_radius_small = plot_radius + r_small_bnds[1]
-    
+    small_mask = np.zeros((grid_size, grid_size), dtype=bool)
     if num_small > 0:
+        gen_radius_small = plot_radius + r_small_bnds[1]
         r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
         r_dist_S = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
         theta_arr_S = np.random.uniform(0, 2 * np.pi, num_small)
@@ -138,52 +117,63 @@ def process_simulation_iteration(task):
             
             sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
             inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-            small_shrub_mask[r_min:r_max, c_min:c_max] |= inside
-            
-    main_array[small_shrub_mask & porous_small_mask] = shrub_value
+            small_mask[r_min:r_max, c_min:c_max] |= inside
 
-    # Overwrite solid bare patches
-    if num_large_bare > 0:
-        r_bare_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large_bare)
-        r_dist_B = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large_bare))
-        theta_arr_B = np.random.uniform(0, 2 * np.pi, num_large_bare)
-        cx_arr_B = r_dist_B * np.cos(theta_arr_B)
-        cy_arr_B = r_dist_B * np.sin(theta_arr_B)
+    # 2. Assemble Base Z-Order: Base Bare -> Small Veg -> Large Veg
+    main_array = np.full((grid_size, grid_size), target_value, dtype=int)
+    main_array[small_mask] = shrub_value
+    main_array[large_mask] = shrub_value
+
+    # 3. Exact Target Correction via Organic Holes (Middle Priority)
+    # We punch holes ONLY through small vegetation, ignoring large vegetation.
+    target_bare_pixels = int(total_valid_pixels * (target_bg / 100.0))
+    current_bare_pixels = np.sum((main_array == target_value) & valid_mask)
+    pixels_to_punch = target_bare_pixels - current_bare_pixels
+    
+    if pixels_to_punch > 0:
+        # Define the exact pixels that can be legally punched
+        punchable_mask = small_mask & ~large_mask & valid_mask
+        punchable_count = np.sum(punchable_mask)
         
-        for cx, cy, rad in zip(cx_arr_B, cy_arr_B, r_bare_arr):
-            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-            if c_min >= c_max or r_min >= r_max: continue
+        if pixels_to_punch >= punchable_count:
+            # Not enough small veg to reach target! Wipe out all punchable small veg.
+            main_array[punchable_mask] = target_value
+        else:
+            # Generate the Gaussian clumps
+            clump_size_m = 0.50
+            sigma_pixels = clump_size_m / cell_size
+            raw_noise = np.random.rand(grid_size, grid_size)
+            blurred_noise = gaussian_filter(raw_noise, sigma=sigma_pixels)
             
-            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-            main_array[r_min:r_max, c_min:c_max][inside] = target_value
+            # Find the exact mathematical threshold ONLY among the punchable pixels
+            punchable_noise = blurred_noise[punchable_mask]
+            fraction_to_punch = pixels_to_punch / punchable_count
+            threshold = np.percentile(punchable_noise, (1 - fraction_to_punch) * 100)
+            
+            # Apply the organic holes exclusively to the legal area
+            hole_mask = punchable_mask & (blurred_noise >= threshold)
+            main_array[hole_mask] = target_value
 
     main_array[~valid_mask] = -9999 
     
     # Exact 2D Metrics
-    bare_pixels = np.sum(main_array[valid_mask] == target_value)
+    is_bare_full = (main_array == target_value)
+    bare_pixels = np.sum(is_bare_full[valid_mask])
     true_bg_pct = (bare_pixels / total_valid_pixels) * 100
     
-    is_bare_full = (main_array == target_value)
     dist_array = distance_transform_edt(is_bare_full) * cell_size
     valid_full_fetch = dist_array[valid_mask]
     exact_fetch = np.mean(valid_full_fetch) if valid_full_fetch.size > 0 else 0.0
     
-    # --- OPTIMIZATION 3: Vectorized 2D Gap Calculation ---
-    # Instead of looping 4,400 times, we calculate all gaps instantly using array diffs
+    # VECTORIZED 2D GAP CALCULATION (Massive Speedup)
     is_bare_masked = np.where(valid_mask, is_bare_full, False)
     
-    # Calculate all row gaps
     padded_rows = np.pad(is_bare_masked, ((0, 0), (1, 1)), constant_values=False)
     diff_rows = np.diff(padded_rows.astype(int), axis=1)
     row_starts = np.where(diff_rows == 1)
     row_ends = np.where(diff_rows == -1)
     row_gaps = (row_ends[1] - row_starts[1]) * cell_size
     
-    # Calculate all col gaps
     padded_cols = np.pad(is_bare_masked, ((1, 1), (0, 0)), constant_values=False)
     diff_cols = np.diff(padded_cols.astype(int), axis=0)
     col_starts = np.where(diff_cols == 1)
@@ -241,9 +231,11 @@ def process_simulation_iteration(task):
     
     return res
 
-# ... (The entire main execution block remains exactly the same) ...
+# ====================================================================
+# 3. MAIN EXECUTION BLOCK 
+# ====================================================================
 if __name__ == '__main__':
-    num_iterations = 19000 
+    num_iterations = 1900 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -257,7 +249,7 @@ if __name__ == '__main__':
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
     total_tasks = len(tasks)
-    cores = multiprocessing.cpu_count() - 1
+    cores = multiprocessing.cpu_count() - 3
     
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
@@ -334,7 +326,7 @@ if __name__ == '__main__':
     }
 
     fig, axes = plt.subplots(3, 7, figsize=(28, 12), constrained_layout=True)
-    fig.suptitle("Porous Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig.suptitle("Hybrid Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
     for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         ax_mae = axes[0, col]
@@ -370,8 +362,8 @@ if __name__ == '__main__':
         if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(script_dir, 'Porous_Simulation_Metrics_MultiScale.png')
-    csv_path = os.path.join(script_dir, 'Porous_Simulation_Metrics_MultiScale.csv')
+    img_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.png')
+    csv_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.csv')
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
