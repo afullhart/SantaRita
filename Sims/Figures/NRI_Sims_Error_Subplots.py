@@ -210,8 +210,9 @@ def process_simulation_iteration(task):
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            # FIXED: Constant 1-pixel (5cm) footprint for ALL discrete scales.
-            # This perfectly clusters the error profiles, matching the drone data.
+            # CONSTANT FOOTPRINT: Set to a static 1-pixel buffer for all scales.
+            # This applies an identical measurement bias window to the 25cm, 50cm, 
+            # 100cm, and 200cm points, tightly clustering the bias lines together!
             footprint_radius = 1 
             stretch_value = target_value if true_bg_pct <= 50 else shrub_value
             
@@ -249,7 +250,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 1900 
+    num_iterations = 19000 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
