@@ -56,7 +56,6 @@ def process_simulation_iteration(task):
 
     # ==========================================
     # Z-INDEXED HYBRID LOGIC 
-    # Top Priority: Large Veg -> Middle: Organic Holes -> Bottom: Small Veg
     # ==========================================
     organic_weight = 0.60
     organic_bg_pct = target_bg * organic_weight
@@ -135,14 +134,14 @@ def process_simulation_iteration(task):
             main_array[punchable_mask] = target_value
         else:
             # MULTI-SCALE FRACTAL NOISE
-            # Combines 1.25m macro-voids with 25cm jagged micro-edges
+            # Combines 3.00m macro-voids with 0.50m jagged micro-edges
             raw_fine = np.random.rand(grid_size, grid_size)
             raw_coarse = np.random.rand(grid_size, grid_size)
             
-            blurred_fine = gaussian_filter(raw_fine, sigma=(0.25 / cell_size))
-            blurred_coarse = gaussian_filter(raw_coarse, sigma=(1.25 / cell_size))
+            blurred_fine = gaussian_filter(raw_fine, sigma=(0.50 / cell_size))
+            blurred_coarse = gaussian_filter(raw_coarse, sigma=(3.00 / cell_size))
             
-            fractal_noise = (0.65 * blurred_coarse) + (0.35 * blurred_fine)
+            fractal_noise = (0.85 * blurred_coarse) + (0.15 * blurred_fine)
             
             punchable_noise = fractal_noise[punchable_mask]
             fraction_to_punch = pixels_to_punch / punchable_count
@@ -262,7 +261,7 @@ if __name__ == '__main__':
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
     total_tasks = len(tasks)
-    cores = multiprocessing.cpu_count() - 3
+    cores = multiprocessing.cpu_count() - 4
     
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
@@ -277,6 +276,7 @@ if __name__ == '__main__':
     with concurrent.futures.ProcessPoolExecutor(max_workers=cores) as executor:
         for count, result in enumerate(executor.map(process_simulation_iteration, tasks), 1):
             results.append(result)
+            # Prints progress to the console every 100 iterations
             if count % 100 == 0 or count == total_tasks:
                 print(f"  -> Processed {count} / {total_tasks} simulations...")
 
