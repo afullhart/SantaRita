@@ -210,7 +210,9 @@ def process_simulation_iteration(task):
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            footprint_radius = int(step * 0.05) 
+            # FIXED: Constant 1-pixel (5cm) footprint for ALL discrete scales.
+            # This perfectly clusters the error profiles, matching the drone data.
+            footprint_radius = 1 
             stretch_value = target_value if true_bg_pct <= 50 else shrub_value
             
             sampled_pixels_inflated = []
@@ -261,7 +263,7 @@ if __name__ == '__main__':
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
     total_tasks = len(tasks)
-    cores = multiprocessing.cpu_count() - 4
+    cores = multiprocessing.cpu_count() - 3
     
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
