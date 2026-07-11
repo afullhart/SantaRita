@@ -62,11 +62,11 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
+    # RESTORED RATIO: 33% Large Woody
     alpha_large = 0.33
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
-    # FIXED: Reduced maximum large shrub radius to 1.5m to allow large step sizes to alias/vault over them.
     r_large_bnds = (0.3, 2.0)
     r_small_bnds = (0.10, 0.30)
     
@@ -78,17 +78,17 @@ def process_simulation_iteration(task):
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
     # ==========================================
-    # THOMAS CLUSTER PROCESS
+    # DECOUPLED SPATIAL PROCESSES
     # ==========================================
     cluster_spread = np.interp(target_bg, [0, 100], [8.0, 1.0])
     shrubs_per_cluster = int(np.interp(target_bg, [0, 100], [2, 10]))
     
-    total_plants = num_large + num_small
-    num_parents = max(1, total_plants // shrubs_per_cluster) if total_plants > 0 else 0
+    num_parents = max(1, num_large // shrubs_per_cluster) if num_large > 0 else 0
     
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
     small_mask = np.zeros((grid_size, grid_size), dtype=bool)
 
+    # 1. Large Shrubs: Dynamic Thomas Cluster
     if num_parents > 0:
         gen_radius = plot_radius + r_large_bnds[1] + cluster_spread
         r_parents = gen_radius * np.sqrt(np.random.uniform(0, 1, num_parents))
@@ -96,7 +96,6 @@ def process_simulation_iteration(task):
         px_arr = r_parents * np.cos(theta_parents)
         py_arr = r_parents * np.sin(theta_parents)
 
-        # 4. Populate Large Shrubs (Fused Canopy + High-Frequency Edge Noise)
         if num_large > 0:
             r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
             for rad in r_large_arr:
@@ -113,12 +112,15 @@ def process_simulation_iteration(task):
                 sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
                 dx = sub_X - cx
                 dy = sub_Y - cy
+                r_grid = np.sqrt(dx**2 + dy**2)
                 
-                inside = np.zeros(dx.shape, dtype=bool)
+                # Solid core layer 
+                r_core = rad * 0.6
+                noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
+                core_mask = (r_grid <= r_core * (1.0 + noise_core))
                 
-                noise_core = np.random.uniform(-0.25, 0.25, dx.shape)
-                inside |= (np.sqrt(dx**2 + dy**2) <= (rad * 0.6) * (1.0 + noise_core))
-                
+                # Satellite lobe layer
+                lobe_mask = np.zeros(dx.shape, dtype=bool)
                 num_lobes = np.random.randint(3, 6)
                 for _ in range(num_lobes):
                     angle = np.random.uniform(0, 2 * np.pi)
@@ -126,45 +128,57 @@ def process_simulation_iteration(task):
                     ox = offset * np.cos(angle)
                     oy = offset * np.sin(angle)
                     lobe_rad = rad * np.random.uniform(0.4, 0.8)
-                    noise_lobe = np.random.uniform(-0.25, 0.25, dx.shape)
-                    inside |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
-                
-                large_mask[r_min:r_max, c_min:c_max] |= inside
-
-        # 5. Populate Small Shrubs (Fused Canopy + High-Frequency Edge Noise)
-        if num_small > 0:
-            r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-            for rad in r_small_arr:
-                parent_idx = np.random.randint(0, num_parents)
-                cx = np.random.normal(px_arr[parent_idx], cluster_spread)
-                cy = np.random.normal(py_arr[parent_idx], cluster_spread)
-                
-                c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
-                c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
-                r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
-                r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
-                if c_min >= c_max or r_min >= r_max: continue
-                
-                sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-                dx = sub_X - cx
-                dy = sub_Y - cy
-                
-                inside = np.zeros(dx.shape, dtype=bool)
-                
-                noise_core = np.random.uniform(-0.20, 0.20, dx.shape)
-                inside |= (np.sqrt(dx**2 + dy**2) <= (rad * 0.6) * (1.0 + noise_core))
-                
-                num_lobes = np.random.randint(2, 5)
-                for _ in range(num_lobes):
-                    angle = np.random.uniform(0, 2 * np.pi)
-                    offset = rad * np.random.uniform(0.3, 0.7)
-                    ox = offset * np.cos(angle)
-                    oy = offset * np.sin(angle)
-                    lobe_rad = rad * np.random.uniform(0.3, 0.8)
                     noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
-                    inside |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
+                    lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
                 
-                small_mask[r_min:r_max, c_min:c_max] |= inside
+                # Dynamic Exponential Porosity on Fringes
+                norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
+                porosity_chance = 0.90 * (norm_dist ** 2.5)
+                fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
+                lobe_mask &= fringe_keep_mask
+                
+                large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
+
+    # 2. Small Shrubs: Complete Spatial Randomness (CSR)
+    if num_small > 0:
+        r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+        for rad in r_small_arr:
+            cx = np.random.uniform(-plot_radius, plot_radius)
+            cy = np.random.uniform(-plot_radius, plot_radius)
+            
+            c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
+            c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
+            r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
+            r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
+            if c_min >= c_max or r_min >= r_max: continue
+            
+            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+            dx = sub_X - cx
+            dy = sub_Y - cy
+            r_grid = np.sqrt(dx**2 + dy**2)
+            
+            # Solid core layer
+            r_core = rad * 0.6
+            noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
+            core_mask = (r_grid <= r_core * (1.0 + noise_core))
+            
+            lobe_mask = np.zeros(dx.shape, dtype=bool)
+            num_lobes = np.random.randint(2, 5)
+            for _ in range(num_lobes):
+                angle = np.random.uniform(0, 2 * np.pi)
+                offset = rad * np.random.uniform(0.3, 0.7)
+                ox = offset * np.cos(angle)
+                oy = offset * np.sin(angle)
+                lobe_rad = rad * np.random.uniform(0.3, 0.8)
+                noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
+                lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
+            
+            norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
+            porosity_chance = 0.85 * (norm_dist ** 2.0)
+            fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
+            lobe_mask &= fringe_keep_mask
+            
+            small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
     # ==========================================
     # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
@@ -287,7 +301,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 1900 
+    num_iterations = 1900
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
