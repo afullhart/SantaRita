@@ -54,7 +54,7 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Z-INDEXED HYBRID LOGIC & POISSON INTENSITY
+    # Z-INDEXED HYBRID LOGIC 
     # ==========================================
     organic_weight = 0.60
     organic_bg_pct = target_bg * organic_weight
@@ -62,12 +62,12 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    # UPDATED: 33% large vegetation / 67% small vegetation
     alpha_large = 0.33
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
-    r_large_bnds = (0.5, 3.0)
+    # FIXED: Reduced maximum large shrub radius to 1.5m to allow large step sizes to alias/vault over them.
+    r_large_bnds = (0.3, 2.0)
     r_small_bnds = (0.10, 0.30)
     
     mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
@@ -78,7 +78,7 @@ def process_simulation_iteration(task):
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
     # ==========================================
-    # THOMAS CLUSTER PROCESS (Fully Dynamic)
+    # THOMAS CLUSTER PROCESS
     # ==========================================
     cluster_spread = np.interp(target_bg, [0, 100], [8.0, 1.0])
     shrubs_per_cluster = int(np.interp(target_bg, [0, 100], [2, 10]))
@@ -96,6 +96,7 @@ def process_simulation_iteration(task):
         px_arr = r_parents * np.cos(theta_parents)
         py_arr = r_parents * np.sin(theta_parents)
 
+        # 4. Populate Large Shrubs (Fused Canopy + High-Frequency Edge Noise)
         if num_large > 0:
             r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
             for rad in r_large_arr:
@@ -103,16 +104,34 @@ def process_simulation_iteration(task):
                 cx = np.random.normal(px_arr[parent_idx], cluster_spread)
                 cy = np.random.normal(py_arr[parent_idx], cluster_spread)
                 
-                c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-                c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-                r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-                r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+                c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
+                c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
+                r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
+                r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
                 if c_min >= c_max or r_min >= r_max: continue
                 
                 sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-                inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+                dx = sub_X - cx
+                dy = sub_Y - cy
+                
+                inside = np.zeros(dx.shape, dtype=bool)
+                
+                noise_core = np.random.uniform(-0.25, 0.25, dx.shape)
+                inside |= (np.sqrt(dx**2 + dy**2) <= (rad * 0.6) * (1.0 + noise_core))
+                
+                num_lobes = np.random.randint(3, 6)
+                for _ in range(num_lobes):
+                    angle = np.random.uniform(0, 2 * np.pi)
+                    offset = rad * np.random.uniform(0.3, 0.7)
+                    ox = offset * np.cos(angle)
+                    oy = offset * np.sin(angle)
+                    lobe_rad = rad * np.random.uniform(0.4, 0.8)
+                    noise_lobe = np.random.uniform(-0.25, 0.25, dx.shape)
+                    inside |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
+                
                 large_mask[r_min:r_max, c_min:c_max] |= inside
 
+        # 5. Populate Small Shrubs (Fused Canopy + High-Frequency Edge Noise)
         if num_small > 0:
             r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
             for rad in r_small_arr:
@@ -120,14 +139,31 @@ def process_simulation_iteration(task):
                 cx = np.random.normal(px_arr[parent_idx], cluster_spread)
                 cy = np.random.normal(py_arr[parent_idx], cluster_spread)
                 
-                c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-                c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-                r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-                r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+                c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
+                c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
+                r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
+                r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
                 if c_min >= c_max or r_min >= r_max: continue
                 
                 sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-                inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+                dx = sub_X - cx
+                dy = sub_Y - cy
+                
+                inside = np.zeros(dx.shape, dtype=bool)
+                
+                noise_core = np.random.uniform(-0.20, 0.20, dx.shape)
+                inside |= (np.sqrt(dx**2 + dy**2) <= (rad * 0.6) * (1.0 + noise_core))
+                
+                num_lobes = np.random.randint(2, 5)
+                for _ in range(num_lobes):
+                    angle = np.random.uniform(0, 2 * np.pi)
+                    offset = rad * np.random.uniform(0.3, 0.7)
+                    ox = offset * np.cos(angle)
+                    oy = offset * np.sin(angle)
+                    lobe_rad = rad * np.random.uniform(0.3, 0.8)
+                    noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
+                    inside |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
+                
                 small_mask[r_min:r_max, c_min:c_max] |= inside
 
     # ==========================================
@@ -251,7 +287,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 19000 
+    num_iterations = 1900 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -265,7 +301,7 @@ if __name__ == '__main__':
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
     total_tasks = len(tasks)
-    cores = multiprocessing.cpu_count() - 3
+    cores = max(1, multiprocessing.cpu_count() - 3)
     
     print(f"{'='*50}")
     print(f"Starting Multiprocessing Simulation")
@@ -377,6 +413,3 @@ if __name__ == '__main__':
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
-    
-    mae_df.to_csv(csv_path, index=False)
-    print(f"\nResults saved to:\n  -> {img_path}\n  -> {csv_path}")
