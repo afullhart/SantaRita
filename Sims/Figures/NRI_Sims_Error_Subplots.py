@@ -23,7 +23,6 @@ def process_simulation_iteration(task):
     
     np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
 
-    # EXACT grid coordinates to prevent sub-pixel aliasing drift along the sampling rays
     x = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
     y = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
     grid_size = len(x)
@@ -55,7 +54,7 @@ def process_simulation_iteration(task):
     total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
-    # Z-INDEXED HYBRID LOGIC 
+    # Z-INDEXED HYBRID LOGIC & POISSON INTENSITY
     # ==========================================
     organic_weight = 0.60
     organic_bg_pct = target_bg * organic_weight
@@ -63,8 +62,8 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    # Locked at 0.25 to ensure small vegetation ALWAYS persists across the gradient
-    alpha_large = 0.25
+    # UPDATED: 33% large vegetation / 67% small vegetation
+    alpha_large = 0.33
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
@@ -78,46 +77,62 @@ def process_simulation_iteration(task):
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
+    # ==========================================
+    # THOMAS CLUSTER PROCESS (Fully Dynamic)
+    # ==========================================
+    cluster_spread = np.interp(target_bg, [0, 100], [8.0, 1.0])
+    shrubs_per_cluster = int(np.interp(target_bg, [0, 100], [2, 10]))
+    
+    total_plants = num_large + num_small
+    num_parents = max(1, total_plants // shrubs_per_cluster) if total_plants > 0 else 0
+    
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
-    if num_large > 0:
-        gen_radius_large = plot_radius + r_large_bnds[1]
-        r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
-        r_dist_L = gen_radius_large * np.sqrt(np.random.uniform(0, 1, num_large))
-        theta_arr_L = np.random.uniform(0, 2 * np.pi, num_large)
-        cx_arr_L = r_dist_L * np.cos(theta_arr_L)
-        cy_arr_L = r_dist_L * np.sin(theta_arr_L)
-        
-        for cx, cy, rad in zip(cx_arr_L, cy_arr_L, r_large_arr):
-            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-            if c_min >= c_max or r_min >= r_max: continue
-            
-            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-            large_mask[r_min:r_max, c_min:c_max] |= inside
-
     small_mask = np.zeros((grid_size, grid_size), dtype=bool)
-    if num_small > 0:
-        gen_radius_small = plot_radius + r_small_bnds[1]
-        r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-        r_dist_S = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_small))
-        theta_arr_S = np.random.uniform(0, 2 * np.pi, num_small)
-        cx_arr_S = r_dist_S * np.cos(theta_arr_S)
-        cy_arr_S = r_dist_S * np.sin(theta_arr_S)
-        
-        for cx, cy, rad in zip(cx_arr_S, cy_arr_S, r_small_arr):
-            c_min = max(0, int((cx - rad + plot_radius) / cell_size))
-            c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
-            r_min = max(0, int((cy - rad + plot_radius) / cell_size))
-            r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
-            if c_min >= c_max or r_min >= r_max: continue
-            
-            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-            inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
-            small_mask[r_min:r_max, c_min:c_max] |= inside
 
+    if num_parents > 0:
+        gen_radius = plot_radius + r_large_bnds[1] + cluster_spread
+        r_parents = gen_radius * np.sqrt(np.random.uniform(0, 1, num_parents))
+        theta_parents = np.random.uniform(0, 2 * np.pi, num_parents)
+        px_arr = r_parents * np.cos(theta_parents)
+        py_arr = r_parents * np.sin(theta_parents)
+
+        if num_large > 0:
+            r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
+            for rad in r_large_arr:
+                parent_idx = np.random.randint(0, num_parents)
+                cx = np.random.normal(px_arr[parent_idx], cluster_spread)
+                cy = np.random.normal(py_arr[parent_idx], cluster_spread)
+                
+                c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+                c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+                r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+                r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+                if c_min >= c_max or r_min >= r_max: continue
+                
+                sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+                inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+                large_mask[r_min:r_max, c_min:c_max] |= inside
+
+        if num_small > 0:
+            r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+            for rad in r_small_arr:
+                parent_idx = np.random.randint(0, num_parents)
+                cx = np.random.normal(px_arr[parent_idx], cluster_spread)
+                cy = np.random.normal(py_arr[parent_idx], cluster_spread)
+                
+                c_min = max(0, int((cx - rad + plot_radius) / cell_size))
+                c_max = min(grid_size, int((cx + rad + plot_radius) / cell_size) + 1)
+                r_min = max(0, int((cy - rad + plot_radius) / cell_size))
+                r_max = min(grid_size, int((cy + rad + plot_radius) / cell_size) + 1)
+                if c_min >= c_max or r_min >= r_max: continue
+                
+                sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+                inside = ((sub_X - cx)**2 + (sub_Y - cy)**2) <= rad**2
+                small_mask[r_min:r_max, c_min:c_max] |= inside
+
+    # ==========================================
+    # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
+    # ==========================================
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
     main_array[small_mask] = shrub_value
     main_array[large_mask] = shrub_value
@@ -133,8 +148,6 @@ def process_simulation_iteration(task):
         if pixels_to_punch >= punchable_count:
             main_array[punchable_mask] = target_value
         else:
-            # MULTI-SCALE FRACTAL NOISE
-            # Combines 3.00m macro-voids with 0.50m jagged micro-edges
             raw_fine = np.random.rand(grid_size, grid_size)
             raw_coarse = np.random.rand(grid_size, grid_size)
             
@@ -202,7 +215,7 @@ def process_simulation_iteration(task):
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     
     # ========================================================================
-    # EXPLICIT INTERVAL ASSUMPTION & FOOTPRINT INFLATION
+    # EXPLICIT INTERVAL SAMPLING
     # ========================================================================
     for label, step in bg_intervals.items():
         if step == 1:
@@ -210,23 +223,11 @@ def process_simulation_iteration(task):
             nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            # CONSTANT FOOTPRINT: Set to a static 1-pixel buffer for all scales.
-            # This applies an identical measurement bias window to the 25cm, 50cm, 
-            # 100cm, and 200cm points, tightly clustering the bias lines together!
-            footprint_radius = 1 
-            stretch_value = target_value if true_bg_pct <= 50 else shrub_value
-            
-            sampled_pixels_inflated = []
+            sampled_pixels = []
             for t in all_nri_transects:
-                for i in range(0, len(t), step):
-                    start = max(0, i - footprint_radius)
-                    end = min(len(t), i + footprint_radius + 1)
-                    if stretch_value in t[start:end]:
-                        sampled_pixels_inflated.append(stretch_value)
-                    else:
-                        sampled_pixels_inflated.append(t[i])
-                        
-            sampled_pixels_arr = np.array(sampled_pixels_inflated)
+                sampled_pixels.extend(t[::step])
+                
+            sampled_pixels_arr = np.array(sampled_pixels)
             sampled_bg = (np.sum(sampled_pixels_arr == target_value) / len(sampled_pixels_arr)) * 100 if len(sampled_pixels_arr) > 0 else 0.0
             
         res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
@@ -279,7 +280,6 @@ if __name__ == '__main__':
     with concurrent.futures.ProcessPoolExecutor(max_workers=cores) as executor:
         for count, result in enumerate(executor.map(process_simulation_iteration, tasks), 1):
             results.append(result)
-            # Prints progress to the console every 100 iterations
             if count % 100 == 0 or count == total_tasks:
                 print(f"  -> Processed {count} / {total_tasks} simulations...")
 
@@ -314,16 +314,8 @@ if __name__ == '__main__':
             
         return pd.Series(d)
 
-    # Calculate aggregations and SORT the dataframe to ensure lines don't zig-zag
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
     mae_df = mae_df.sort_values('True_BG_Mean').reset_index(drop=True)
-
-    print("\n" + "="*50)
-    print("Average Exact Mean Fetch per Bare Ground Bin")
-    print("="*50)
-    for _, row in mae_df.iterrows():
-        print(f"Target BG: {int(row['BG_Bin'])}%  ->  Mean Fetch: {row['Exact_Fetch_Mean']:.4f} m")
-    print("="*50 + "\n")
 
     plot_config = [
         ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
