@@ -88,7 +88,12 @@ def process_simulation_iteration(task):
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
     small_mask = np.zeros((grid_size, grid_size), dtype=bool)
 
-    # 1. Large Shrubs: Dynamic Thomas Cluster
+    # SHADOW DIRECTION (Simulating Sun from Southeast, Shadow to Northwest 135 degrees)
+    shadow_angle = np.radians(135)
+    shadow_dx = np.cos(shadow_angle)
+    shadow_dy = np.sin(shadow_angle)
+
+    # 1. Large Shrubs: Dynamic Thomas Cluster with Directional Shadows
     if num_parents > 0:
         gen_radius = plot_radius + r_large_bnds[1] + cluster_spread
         r_parents = gen_radius * np.sqrt(np.random.uniform(0, 1, num_parents))
@@ -114,6 +119,10 @@ def process_simulation_iteration(task):
                 dy = sub_Y - cy
                 r_grid = np.sqrt(dx**2 + dy**2)
                 
+                # Calculate Shadow Intensity (Dot product normalized)
+                dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
+                shadow_intensity = np.clip(dot_prod, 0, 1)
+
                 # Solid core layer 
                 r_core = rad * 0.6
                 noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
@@ -131,15 +140,16 @@ def process_simulation_iteration(task):
                     noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
                     lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
                 
-                # Dynamic Exponential Porosity on Fringes
+                # Apply Directional Shadow Erosion
                 norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
-                porosity_chance = 0.90 * (norm_dist ** 2.5)
+                # Base porosity is 10%. On the shadow side, it scales up to 90%.
+                porosity_chance = 0.10 + 0.80 * shadow_intensity * (norm_dist ** 1.5)
                 fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
                 lobe_mask &= fringe_keep_mask
                 
                 large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
-    # 2. Small Shrubs: Complete Spatial Randomness (CSR)
+    # 2. Small Shrubs: CSR with Directional Shadows
     if num_small > 0:
         r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
         for rad in r_small_arr:
@@ -157,7 +167,9 @@ def process_simulation_iteration(task):
             dy = sub_Y - cy
             r_grid = np.sqrt(dx**2 + dy**2)
             
-            # Solid core layer
+            dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
+            shadow_intensity = np.clip(dot_prod, 0, 1)
+            
             r_core = rad * 0.6
             noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
             core_mask = (r_grid <= r_core * (1.0 + noise_core))
@@ -174,7 +186,7 @@ def process_simulation_iteration(task):
                 lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
             
             norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
-            porosity_chance = 0.85 * (norm_dist ** 2.0)
+            porosity_chance = 0.10 + 0.80 * shadow_intensity * (norm_dist ** 1.5)
             fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
             lobe_mask &= fringe_keep_mask
             
@@ -301,7 +313,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 1900
+    num_iterations = 1900 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
