@@ -10,7 +10,11 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter
 # 1. HELPER FUNCTIONS
 # ====================================================================
 def get_gap_lengths(transect_array, gap_val, p_size):
-    padded = np.concatenate(([False], (transect_array == gap_val), [False]))
+    # Ensure we don't count boundary nodata values as gaps
+    valid_transect = transect_array[transect_array != -9999]
+    if len(valid_transect) == 0:
+        return np.array([])
+    padded = np.concatenate(([False], (valid_transect == gap_val), [False]))
     diffs = np.diff(padded.astype(int))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
     return (ends - starts) * p_size
@@ -62,7 +66,6 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    # RESTORED RATIO: 33% Large Woody
     alpha_large = 0.33
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
@@ -88,12 +91,10 @@ def process_simulation_iteration(task):
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
     small_mask = np.zeros((grid_size, grid_size), dtype=bool)
 
-    # SHADOW DIRECTION (Simulating Sun from Southeast, Shadow to Northwest 135 degrees)
     shadow_angle = np.radians(135)
     shadow_dx = np.cos(shadow_angle)
     shadow_dy = np.sin(shadow_angle)
 
-    # 1. Large Shrubs: Dynamic Thomas Cluster with Directional Shadows
     if num_parents > 0:
         gen_radius = plot_radius + r_large_bnds[1] + cluster_spread
         r_parents = gen_radius * np.sqrt(np.random.uniform(0, 1, num_parents))
@@ -119,16 +120,13 @@ def process_simulation_iteration(task):
                 dy = sub_Y - cy
                 r_grid = np.sqrt(dx**2 + dy**2)
                 
-                # Calculate Shadow Intensity (Dot product normalized)
                 dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
                 shadow_intensity = np.clip(dot_prod, 0, 1)
 
-                # Solid core layer 
                 r_core = rad * 0.6
                 noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
                 core_mask = (r_grid <= r_core * (1.0 + noise_core))
                 
-                # Satellite lobe layer
                 lobe_mask = np.zeros(dx.shape, dtype=bool)
                 num_lobes = np.random.randint(3, 6)
                 for _ in range(num_lobes):
@@ -140,16 +138,13 @@ def process_simulation_iteration(task):
                     noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
                     lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
                 
-                # Apply Directional Shadow Erosion
                 norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
-                # Base porosity is 10%. On the shadow side, it scales up to 90%.
                 porosity_chance = 0.10 + 0.80 * shadow_intensity * (norm_dist ** 1.5)
                 fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
                 lobe_mask &= fringe_keep_mask
                 
                 large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
-    # 2. Small Shrubs: CSR with Directional Shadows
     if num_small > 0:
         r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
         for rad in r_small_arr:
@@ -277,35 +272,48 @@ def process_simulation_iteration(task):
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     
     # ========================================================================
-    # EXPLICIT INTERVAL SAMPLING
+    # EXPLICIT INTERVAL SAMPLING (UPDATED TO MATCH FIELD PROTOCOL n=75)
     # ========================================================================
     for label, step in bg_intervals.items():
         if step == 1:
-            total_nri_pixels = sum(len(t) for t in all_nri_transects)
-            nri_bare_pixels = sum(np.sum(t == target_value) for t in all_nri_transects)
+            # For 0cm continuous, we use the whole array but still drop the 50m fencepost
+            all_pixels = np.concatenate([t[:-1] for t in all_nri_transects])
+            valid_pixels = all_pixels[all_pixels != -9999] 
+            total_nri_pixels = len(valid_pixels)
+            nri_bare_pixels = np.sum(valid_pixels == target_value)
             sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
             sampled_pixels = []
             for t in all_nri_transects:
-                sampled_pixels.extend(t[::step])
+                # [:-1:step] excludes the 50m mark (1001st pixel) 
+                # This guarantees exactly 25 points (n=75 total) for the 200cm interval
+                sampled_pixels.extend(t[:-1:step])
                 
             sampled_pixels_arr = np.array(sampled_pixels)
-            sampled_bg = (np.sum(sampled_pixels_arr == target_value) / len(sampled_pixels_arr)) * 100 if len(sampled_pixels_arr) > 0 else 0.0
+            valid_sampled_arr = sampled_pixels_arr[sampled_pixels_arr != -9999] 
+            total_valid_sampled = len(valid_sampled_arr)
+            sampled_bg = (np.sum(valid_sampled_arr == target_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
             
         res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
         
     fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     for label, step in fetch_intervals.items():
-        fetch_sampled = np.concatenate([f[::step] for f in all_fetch_vals]) 
+        # Apply the exact same field-matching slice to the fetch sampling
+        fetch_sampled = np.concatenate([f[:-1:step] for f in all_fetch_vals]) 
         sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
         res[f'Fetch_{label}_Error'] = sampled_mean - exact_fetch
     
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
-    res['Gap_0_24_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / total_nri_length_m) * 100) - ex_0_24
-    res['Gap_25_50_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / total_nri_length_m) * 100) - ex_25_50
-    res['Gap_51_100_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / total_nri_length_m) * 100) - ex_51_100
-    res['Gap_101_200_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / total_nri_length_m) * 100) - ex_101_200
-    res['Gap_gt_200_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / total_nri_length_m) * 100) - ex_gt_200
+    
+    # Ensure total_nri_length_m strictly matches the valid pixels to prevent gap percentage underestimation
+    valid_nri_pixel_count = np.sum(np.concatenate(all_nri_transects) != -9999)
+    adjusted_nri_length_m = valid_nri_pixel_count * cell_size
+    
+    res['Gap_0_24_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / adjusted_nri_length_m) * 100) - ex_0_24
+    res['Gap_25_50_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.25) & (all_nri_gaps <= 0.50)]) / adjusted_nri_length_m) * 100) - ex_25_50
+    res['Gap_51_100_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / adjusted_nri_length_m) * 100) - ex_51_100
+    res['Gap_101_200_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / adjusted_nri_length_m) * 100) - ex_101_200
+    res['Gap_gt_200_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / adjusted_nri_length_m) * 100) - ex_gt_200
     
     return res
 
@@ -358,18 +366,23 @@ if __name__ == '__main__':
             'True_BG_Mean': np.mean(x['True_BG_Pct']),
             'Exact_Fetch_Mean': np.mean(x['Exact_Fetch'])
         }
+        for gap in ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']:
+            d[f'Exact_{gap}_Mean'] = np.mean(x[f'Exact_{gap}'])
         
         for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
+            d[f'BG_{scale}_Val'] = np.mean(x[f'BG_{scale}_Error'] + x['True_BG_Pct'])
             d[f'BG_{scale}_MAE'] = np.mean(np.abs(x[f'BG_{scale}_Error']))
             d[f'BG_{scale}_MRE'] = calc_mre(x[f'BG_{scale}_Error'], x['True_BG_Pct'])
             d[f'BG_{scale}_Bias'] = np.mean(x[f'BG_{scale}_Error'])
             
         for scale in ['25cm', '50cm', '100cm', '200cm']:
+            d[f'Fetch_{scale}_Val'] = np.mean(x[f'Fetch_{scale}_Error'] + x['Exact_Fetch'])
             d[f'Fetch_{scale}_MAE'] = np.mean(np.abs(x[f'Fetch_{scale}_Error']))
             d[f'Fetch_{scale}_MRE'] = calc_mre(x[f'Fetch_{scale}_Error'], x['Exact_Fetch'])
             d[f'Fetch_{scale}_Bias'] = np.mean(x[f'Fetch_{scale}_Error'])
             
         for gap in ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']:
+            d[f'{gap}_0cm_Val'] = np.mean(x[f'{gap}_0cm_Error'] + x[f'Exact_{gap}'])
             d[f'{gap}_0cm_MAE'] = np.mean(np.abs(x[f'{gap}_0cm_Error']))
             d[f'{gap}_0cm_MRE'] = calc_mre(x[f'{gap}_0cm_Error'], x[f'Exact_{gap}'])
             d[f'{gap}_0cm_Bias'] = np.mean(x[f'{gap}_0cm_Error'])
@@ -397,32 +410,46 @@ if __name__ == '__main__':
         '200cm': 'crimson'
     }
 
-    fig, axes = plt.subplots(3, 7, figsize=(28, 12), constrained_layout=True)
-    fig.suptitle("Hybrid Simulation Metrics (MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig, axes = plt.subplots(4, 7, figsize=(28, 16), constrained_layout=True)
+    fig.suptitle("Hybrid Simulation Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
     for col, (prefix, title, scales, col_color) in enumerate(plot_config):
-        ax_mae = axes[0, col]
-        ax_mre = axes[1, col]
-        ax_bias = axes[2, col]
+        ax_val = axes[0, col]
+        ax_mae = axes[1, col]
+        ax_mre = axes[2, col]
+        ax_bias = axes[3, col]
         
+        # Plot Exact Reference Lines
+        if prefix == 'BG':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_BG_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix == 'Fetch':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['Exact_Fetch_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix.startswith('Gap'):
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'Exact_{prefix}_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+
         for scale in scales:
             var_base = f'{prefix}_{scale}'
             color = scale_colors[scale] if len(scales) > 1 else col_color
             label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
             line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
             
-            ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], label=label, **line_kws)
+            # Plot the actual data lines
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label, **line_kws)
+            ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], **line_kws)
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
             
-        for ax in [ax_mae, ax_mre, ax_bias]:
+        for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
             ax.set_xlim(0, 100)
             ax.set_xticks(np.arange(0, 81, 20)) 
             
-        ax_mae.set_title(title, fontsize=15, pad=12)
-        ax_mae.grid(True, alpha=0.3)
-        ax_mae.legend(loc='upper left', fontsize=10) 
+        ax_val.set_title(title, fontsize=15, pad=12)
+        ax_val.grid(True, alpha=0.3)
+        ax_val.legend(loc='upper left', fontsize=10)
         
+        if col == 0: ax_val.set_ylabel("Sampled Value", fontsize=13)
+        
+        ax_mae.grid(True, alpha=0.3)
         if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
             
         ax_mre.grid(True, alpha=0.3)
