@@ -10,7 +10,6 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter
 # 1. HELPER FUNCTIONS
 # ====================================================================
 def get_gap_lengths(transect_array, gap_val, p_size):
-    # Ensure we don't count boundary nodata values as gaps
     valid_transect = transect_array[transect_array != -9999]
     if len(valid_transect) == 0:
         return np.array([])
@@ -145,47 +144,57 @@ def process_simulation_iteration(task):
                 
                 large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
+    # ==========================================
+    # THOMAS CLUSTER IMPLEMENTATION FOR SMALL SHRUBS
+    # ==========================================
     if num_small > 0:
-        r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-        for rad in r_small_arr:
-            cx = np.random.uniform(-plot_radius, plot_radius)
-            cy = np.random.uniform(-plot_radius, plot_radius)
-            
-            c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
-            c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
-            r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
-            r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
-            if c_min >= c_max or r_min >= r_max: continue
-            
-            sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
-            dx = sub_X - cx
-            dy = sub_Y - cy
-            r_grid = np.sqrt(dx**2 + dy**2)
-            
-            dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
-            shadow_intensity = np.clip(dot_prod, 0, 1)
-            
-            r_core = rad * 0.6
-            noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
-            core_mask = (r_grid <= r_core * (1.0 + noise_core))
-            
-            lobe_mask = np.zeros(dx.shape, dtype=bool)
-            num_lobes = np.random.randint(2, 5)
-            for _ in range(num_lobes):
-                angle = np.random.uniform(0, 2 * np.pi)
-                offset = rad * np.random.uniform(0.3, 0.7)
-                ox = offset * np.cos(angle)
-                oy = offset * np.sin(angle)
-                lobe_rad = rad * np.random.uniform(0.3, 0.8)
-                noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
-                lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
-            
-            norm_dist = np.clip((r_grid - r_core) / rad, 0, 1)
-            porosity_chance = 0.10 + 0.80 * shadow_intensity * (norm_dist ** 1.5)
-            fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
-            lobe_mask &= fringe_keep_mask
-            
-            small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
+        shrubs_per_cluster_small = int(np.interp(target_bg, [0, 100], [5, 20]))
+        num_parents_small = max(1, num_small // shrubs_per_cluster_small)
+        cluster_spread_small = cluster_spread * 0.80 
+
+        if num_parents_small > 0:
+            gen_radius_small = plot_radius + r_small_bnds[1] + cluster_spread_small
+            r_parents_s = gen_radius_small * np.sqrt(np.random.uniform(0, 1, num_parents_small))
+            theta_parents_s = np.random.uniform(0, 2 * np.pi, num_parents_small)
+            px_arr_s = r_parents_s * np.cos(theta_parents_s)
+            py_arr_s = r_parents_s * np.sin(theta_parents_s)
+
+            r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
+            for rad in r_small_arr:
+                parent_idx = np.random.randint(0, num_parents_small)
+                cx = np.random.normal(px_arr_s[parent_idx], cluster_spread_small)
+                cy = np.random.normal(py_arr_s[parent_idx], cluster_spread_small)
+                
+                c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
+                c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
+                r_min = max(0, int((cy - rad * 1.5 + plot_radius) / cell_size))
+                r_max = min(grid_size, int((cy + rad * 1.5 + plot_radius) / cell_size) + 1)
+                if c_min >= c_max or r_min >= r_max: continue
+                
+                sub_X, sub_Y = X[r_min:r_max, c_min:c_max], Y[r_min:r_max, c_min:c_max]
+                dx = sub_X - cx
+                dy = sub_Y - cy
+                r_grid = np.sqrt(dx**2 + dy**2)
+                
+                dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
+                shadow_intensity = np.clip(dot_prod, 0, 1)
+                
+                r_core = rad * 0.6
+                noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
+                core_mask = (r_grid <= r_core * (1.0 + noise_core))
+                
+                lobe_mask = np.zeros(dx.shape, dtype=bool)
+                num_lobes = np.random.randint(2, 5)
+                for _ in range(num_lobes):
+                    angle = np.random.uniform(0, 2 * np.pi)
+                    offset = rad * np.random.uniform(0.3, 0.7)
+                    ox = offset * np.cos(angle)
+                    oy = offset * np.sin(angle)
+                    lobe_rad = rad * np.random.uniform(0.3, 0.8)
+                    noise_lobe = np.random.uniform(-0.20, 0.20, dx.shape)
+                    lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
+                
+                small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
     # ==========================================
     # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
@@ -208,10 +217,10 @@ def process_simulation_iteration(task):
             raw_fine = np.random.rand(grid_size, grid_size)
             raw_coarse = np.random.rand(grid_size, grid_size)
             
-            blurred_fine = gaussian_filter(raw_fine, sigma=(0.50 / cell_size))
+            blurred_fine = gaussian_filter(raw_fine, sigma=(1.00 / cell_size))
             blurred_coarse = gaussian_filter(raw_coarse, sigma=(3.00 / cell_size))
             
-            fractal_noise = (0.85 * blurred_coarse) + (0.15 * blurred_fine)
+            fractal_noise = (0.95 * blurred_coarse) + (0.05 * blurred_fine)
             
             punchable_noise = fractal_noise[punchable_mask]
             fraction_to_punch = pixels_to_punch / punchable_count
@@ -271,12 +280,8 @@ def process_simulation_iteration(task):
         
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     
-    # ========================================================================
-    # EXPLICIT INTERVAL SAMPLING (UPDATED TO MATCH FIELD PROTOCOL n=75)
-    # ========================================================================
     for label, step in bg_intervals.items():
         if step == 1:
-            # For 0cm continuous, we use the whole array but still drop the 50m fencepost
             all_pixels = np.concatenate([t[:-1] for t in all_nri_transects])
             valid_pixels = all_pixels[all_pixels != -9999] 
             total_nri_pixels = len(valid_pixels)
@@ -285,8 +290,6 @@ def process_simulation_iteration(task):
         else:
             sampled_pixels = []
             for t in all_nri_transects:
-                # [:-1:step] excludes the 50m mark (1001st pixel) 
-                # This guarantees exactly 25 points (n=75 total) for the 200cm interval
                 sampled_pixels.extend(t[:-1:step])
                 
             sampled_pixels_arr = np.array(sampled_pixels)
@@ -298,14 +301,12 @@ def process_simulation_iteration(task):
         
     fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     for label, step in fetch_intervals.items():
-        # Apply the exact same field-matching slice to the fetch sampling
         fetch_sampled = np.concatenate([f[:-1:step] for f in all_fetch_vals]) 
         sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
         res[f'Fetch_{label}_Error'] = sampled_mean - exact_fetch
     
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
     
-    # Ensure total_nri_length_m strictly matches the valid pixels to prevent gap percentage underestimation
     valid_nri_pixel_count = np.sum(np.concatenate(all_nri_transects) != -9999)
     adjusted_nri_length_m = valid_nri_pixel_count * cell_size
     
@@ -419,7 +420,6 @@ if __name__ == '__main__':
         ax_mre = axes[2, col]
         ax_bias = axes[3, col]
         
-        # Plot Exact Reference Lines
         if prefix == 'BG':
             ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_BG_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
         elif prefix == 'Fetch':
@@ -433,7 +433,6 @@ if __name__ == '__main__':
             label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
             line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
             
-            # Plot the actual data lines
             ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label, **line_kws)
             ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], **line_kws)
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
@@ -466,3 +465,4 @@ if __name__ == '__main__':
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
+    
