@@ -14,7 +14,7 @@ def get_gap_lengths(transect_array, gap_val, p_size):
     if len(valid_transect) == 0:
         return np.array([])
     padded = np.concatenate(([False], (valid_transect == gap_val), [False]))
-    diffs = np.diff(padded.astype(int))
+    diffs = np.diff(padded.astype(np.int8))
     starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
     return (ends - starts) * p_size
 
@@ -242,16 +242,16 @@ def process_simulation_iteration(task):
     is_bare_masked = np.where(valid_mask, is_bare_full, False)
     
     padded_rows = np.pad(is_bare_masked, ((0, 0), (1, 1)), constant_values=False)
-    diff_rows = np.diff(padded_rows.astype(int), axis=1)
+    diff_rows = np.diff(padded_rows.astype(np.int8), axis=1)
     row_starts = np.where(diff_rows == 1)
     row_ends = np.where(diff_rows == -1)
     row_gaps = (row_ends[1] - row_starts[1]) * cell_size
     
-    padded_cols = np.pad(is_bare_masked, ((1, 1), (0, 0)), constant_values=False)
-    diff_cols = np.diff(padded_cols.astype(int), axis=0)
+    padded_cols = np.pad(is_bare_masked.T, ((0, 0), (1, 1)), constant_values=False)
+    diff_cols = np.diff(padded_cols.astype(np.int8), axis=1)
     col_starts = np.where(diff_cols == 1)
     col_ends = np.where(diff_cols == -1)
-    col_gaps = (col_ends[0] - col_starts[0]) * cell_size
+    col_gaps = (col_ends[1] - col_starts[1]) * cell_size
     
     all_exhaust_gaps = np.concatenate([row_gaps, col_gaps])
     
@@ -465,4 +465,3 @@ if __name__ == '__main__':
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
-    
