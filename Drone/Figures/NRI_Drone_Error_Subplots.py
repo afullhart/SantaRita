@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 # 1. FOLDER SETUP & DATA LOADING
 # ====================================================================
 base_dir = r'C:\Users\andre'
-csv_path = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots_110m.csv'
+csv_path = r'C:\Users\andre\ScatterPlots\SRER_NRI_Plots_110m.csv'
 
 os.makedirs(base_dir, exist_ok=True)
 
