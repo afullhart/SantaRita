@@ -44,6 +44,7 @@ pairs = [
     ('Exact_Woody_Pct', 'NRI_Woody_100cm_Pct'),
     ('Exact_Woody_Pct', 'NRI_Woody_200cm_Pct'),
 
+    ('Exact_Fetch_m', 'NRI_Fetch_0cm'),
     ('Exact_Fetch_m', 'NRI_Fetch_25cm'),
     ('Exact_Fetch_m', 'NRI_Fetch_50cm'),
     ('Exact_Fetch_m', 'NRI_Fetch_100cm'),
