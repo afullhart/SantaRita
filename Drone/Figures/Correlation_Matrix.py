@@ -11,7 +11,7 @@ output_dir = r"C:\Users\andre\ScatterPlots"
 os.makedirs(output_dir, exist_ok=True)
 
 # Pointing to your raw 110m measurement data
-csv_path = r"C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\SRER_NRI_Plots_110m.csv"
+csv_path = r'C:\Users\andre\ScatterPlots\SRER_NRI_Plots_110m.csv'
 df = pd.read_csv(csv_path)
 
 # ====================================================================
