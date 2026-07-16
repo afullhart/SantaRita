@@ -26,7 +26,8 @@ bg_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
 for scale in bg_scales:
     df[f'BG_{scale}_Error'] = df[f'NRI_BGR_{scale}_Pct'] - df['Exact_BGR_Pct']
 
-fetch_scales = ['25cm', '50cm', '100cm', '200cm']
+# UPDATED: Added '0cm' to the fetch scales
+fetch_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
 for scale in fetch_scales:
     df[f'Fetch_{scale}_Error'] = df[f'NRI_Fetch_{scale}'] - df['Exact_Fetch_m']
 
@@ -121,7 +122,8 @@ def autoscale_y_robust(ax, margin=0.05, force_zero=False):
 # ====================================================================
 plot_config = [
     ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Fetch', 'Mean Fetch (m)', ['25cm', '50cm', '100cm', '200cm'], None),
+    # UPDATED: Added '0cm' to the scales list for Fetch
+    ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
     ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['0cm'], 'steelblue'),
     ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
     ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
