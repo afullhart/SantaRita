@@ -299,7 +299,8 @@ def process_simulation_iteration(task):
             
         res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
         
-    fetch_intervals = {'25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
+    # UPDATED: Included 0cm fetch sampling scale
+    fetch_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     for label, step in fetch_intervals.items():
         fetch_sampled = np.concatenate([f[:-1:step] for f in all_fetch_vals]) 
         sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
@@ -376,7 +377,8 @@ if __name__ == '__main__':
             d[f'BG_{scale}_MRE'] = calc_mre(x[f'BG_{scale}_Error'], x['True_BG_Pct'])
             d[f'BG_{scale}_Bias'] = np.mean(x[f'BG_{scale}_Error'])
             
-        for scale in ['25cm', '50cm', '100cm', '200cm']:
+        # UPDATED: Included 0cm fetch scale
+        for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
             d[f'Fetch_{scale}_Val'] = np.mean(x[f'Fetch_{scale}_Error'] + x['Exact_Fetch'])
             d[f'Fetch_{scale}_MAE'] = np.mean(np.abs(x[f'Fetch_{scale}_Error']))
             d[f'Fetch_{scale}_MRE'] = calc_mre(x[f'Fetch_{scale}_Error'], x['Exact_Fetch'])
@@ -393,9 +395,10 @@ if __name__ == '__main__':
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
     mae_df = mae_df.sort_values('True_BG_Mean').reset_index(drop=True)
 
+    # UPDATED: Plot config includes 0cm scale for Fetch
     plot_config = [
         ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-        ('Fetch', 'Mean Fetch (m)', ['25cm', '50cm', '100cm', '200cm'], None),
+        ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
         ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['0cm'], 'steelblue'),
         ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
         ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
