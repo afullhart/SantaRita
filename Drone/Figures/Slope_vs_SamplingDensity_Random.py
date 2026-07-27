@@ -7,7 +7,7 @@ import os
 # ====================================================================
 # FOLDERS & FILES
 # ====================================================================
-data_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
+data_folder = r'C:\Users\andre\ScatterPlots'
 out_folder = r'C:\Users\andre\ScatterPlots\Random_Sampling'
 
 csv_files = {
