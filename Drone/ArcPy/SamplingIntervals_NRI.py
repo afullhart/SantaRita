@@ -10,7 +10,7 @@ import multiprocessing
 # ====================================================================
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
-csv_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1'
+csv_folder = r'C:\Users\andre\ScatterPlots'
 out_gdb = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\MyProject1.gdb'
 
 # Define the inputs (We will append a new suffix to the outputs so we don't overwrite your main data)
