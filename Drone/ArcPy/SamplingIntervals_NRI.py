@@ -39,6 +39,12 @@ def process_polygon(task):
         nrows = int(round((ymax - ymin) / cell_size))
         
         main_array = arcpy.RasterToNumPyArray(active_tiff, lower_left, ncols, nrows, nodata_to_value=-9999)
+        
+        # ==========================================
+        # NEW: Convert shadow (4) to herb cover (1)
+        # ==========================================
+        main_array[main_array == 4] = herb_value
+
         valid_mask = main_array != -9999
         
         if is_circle:
