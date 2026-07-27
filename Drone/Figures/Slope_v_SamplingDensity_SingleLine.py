@@ -7,7 +7,7 @@ import os
 # ====================================================================
 # CONFIGURATION
 # ====================================================================
-data_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1'
+data_folder = r'C:\Users\andre\ScatterPlots'
 out_folder = r'C:\Users\andre\ScatterPlots\Single_Line_Convergence'
 os.makedirs(out_folder, exist_ok=True)
 
