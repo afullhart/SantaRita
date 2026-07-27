@@ -45,6 +45,9 @@ def process_polygon(task):
         
         main_array = arcpy.RasterToNumPyArray(active_tiff, lower_left, ncols, nrows, nodata_to_value=-9999)
         
+        # Convert shadow (4) to herb cover (1)
+        main_array[main_array == 4] = herb_value
+        
         # 2. CREATE VALIDITY MASK
         valid_mask = main_array != -9999
         
@@ -346,3 +349,4 @@ if __name__ == '__main__':
     arcpy.CheckInExtension('Spatial')
     print('\n========================================================')
     print('ALL PROCESSING COMPLETE.')
+    
