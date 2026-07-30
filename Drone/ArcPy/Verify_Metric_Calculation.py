@@ -59,6 +59,11 @@ try:
     # 3. Extract directly to NumPy (Injecting NoData handling)
     main_array = arcpy.RasterToNumPyArray(source_tiff, lower_left, ncols, nrows, nodata_to_value=-9999)
     
+    # ==========================================
+    # NEW: Convert shadow (4) to herb cover (1)
+    # ==========================================
+    main_array[main_array == 4] = 1
+    
     valid_mask = main_array != -9999
     total_valid_pixels = np.sum(valid_mask)
     print(f"Total Valid Pixels: {total_valid_pixels}")
@@ -177,4 +182,3 @@ except Exception as e:
 finally:
     arcpy.management.Delete("memory")
     arcpy.CheckInExtension("Spatial")
-    
