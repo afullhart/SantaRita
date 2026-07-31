@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
-from scipy.ndimage import distance_transform_edt, gaussian_filter
+from scipy.ndimage import distance_transform_edt, gaussian_filter, label
 
 # ====================================================================
 # 1. HELPER FUNCTIONS
@@ -51,8 +51,10 @@ def process_simulation_iteration(task):
         rows = np.clip(rows, 0, grid_size - 1)
         spoke_indices.append((rows, cols))
         
+    large_shrub_value = 1
+    small_shrub_value = 2
     target_value = 3
-    shrub_value = 2
+    
     total_exhaust_length_m = total_valid_pixels * cell_size * 2
     total_nri_length_m = 3 * spoke_length_m
 
@@ -176,9 +178,6 @@ def process_simulation_iteration(task):
                 dy = sub_Y - cy
                 r_grid = np.sqrt(dx**2 + dy**2)
                 
-                dot_prod = (dx * shadow_dx + dy * shadow_dy) / (r_grid + 1e-5)
-                shadow_intensity = np.clip(dot_prod, 0, 1)
-                
                 r_core = rad * 0.6
                 noise_core = np.random.uniform(-0.15, 0.15, dx.shape)
                 core_mask = (r_grid <= r_core * (1.0 + noise_core))
@@ -197,11 +196,27 @@ def process_simulation_iteration(task):
                 small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
     # ==========================================
+    # SEPARATE WOODY SHRUBS FROM HERBACEOUS COVER
+    # ==========================================
+    if target_bg <= 50:
+        prob_dark = np.interp(target_bg, [5, 50], [0.05, 0.45])
+
+        labeled_large, num_large_features = label(large_mask)
+        true_shrub_mask = np.zeros_like(large_mask, dtype=bool)
+
+        for patch_id in range(1, num_large_features + 1):
+            if np.random.rand() <= prob_dark:
+                true_shrub_mask[labeled_large == patch_id] = True
+
+        small_mask |= (large_mask & ~true_shrub_mask)
+        large_mask = true_shrub_mask
+
+    # ==========================================
     # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
     # ==========================================
     main_array = np.full((grid_size, grid_size), target_value, dtype=int)
-    main_array[small_mask] = shrub_value
-    main_array[large_mask] = shrub_value
+    main_array[small_mask] = small_shrub_value
+    main_array[large_mask] = large_shrub_value
 
     target_bare_pixels = int(total_valid_pixels * (target_bg / 100.0))
     current_bare_pixels = np.sum((main_array == target_value) & valid_mask)
@@ -234,6 +249,9 @@ def process_simulation_iteration(task):
     is_bare_full = (main_array == target_value)
     bare_pixels = np.sum(is_bare_full[valid_mask])
     true_bg_pct = (bare_pixels / total_valid_pixels) * 100
+
+    true_herb_pct = (np.sum(main_array[valid_mask] == small_shrub_value) / total_valid_pixels) * 100
+    true_woody_pct = (np.sum(main_array[valid_mask] == large_shrub_value) / total_valid_pixels) * 100
     
     dist_array = distance_transform_edt(is_bare_full) * cell_size
     valid_full_fetch = dist_array[valid_mask]
@@ -264,6 +282,8 @@ def process_simulation_iteration(task):
     res = {
         'BG_Bin': target_bg,
         'True_BG_Pct': true_bg_pct,
+        'True_Herb_Pct': true_herb_pct,
+        'True_Woody_Pct': true_woody_pct,
         'Exact_Fetch': exact_fetch,
         'Exact_Gap_0_24': ex_0_24,
         'Exact_Gap_25_50': ex_25_50,
@@ -280,13 +300,14 @@ def process_simulation_iteration(task):
         
     bg_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
     
-    for label, step in bg_intervals.items():
+    for label_str, step in bg_intervals.items():
         if step == 1:
             all_pixels = np.concatenate([t[:-1] for t in all_nri_transects])
             valid_pixels = all_pixels[all_pixels != -9999] 
             total_nri_pixels = len(valid_pixels)
-            nri_bare_pixels = np.sum(valid_pixels == target_value)
-            sampled_bg = (nri_bare_pixels / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_bg = (np.sum(valid_pixels == target_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_herb = (np.sum(valid_pixels == small_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_woody = (np.sum(valid_pixels == large_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
             sampled_pixels = []
             for t in all_nri_transects:
@@ -296,15 +317,18 @@ def process_simulation_iteration(task):
             valid_sampled_arr = sampled_pixels_arr[sampled_pixels_arr != -9999] 
             total_valid_sampled = len(valid_sampled_arr)
             sampled_bg = (np.sum(valid_sampled_arr == target_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
+            sampled_herb = (np.sum(valid_sampled_arr == small_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
+            sampled_woody = (np.sum(valid_sampled_arr == large_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
             
-        res[f'BG_{label}_Error'] = sampled_bg - true_bg_pct
+        res[f'BG_{label_str}_Error'] = sampled_bg - true_bg_pct
+        res[f'Herb_{label_str}_Error'] = sampled_herb - true_herb_pct
+        res[f'Woody_{label_str}_Error'] = sampled_woody - true_woody_pct
         
-    # UPDATED: Included 0cm fetch sampling scale
     fetch_intervals = {'0cm': 1, '25cm': 5, '50cm': 10, '100cm': 20, '200cm': 40}
-    for label, step in fetch_intervals.items():
+    for label_str, step in fetch_intervals.items():
         fetch_sampled = np.concatenate([f[:-1:step] for f in all_fetch_vals]) 
         sampled_mean = np.mean(fetch_sampled[fetch_sampled >= 0]) if fetch_sampled.size > 0 else 0.0
-        res[f'Fetch_{label}_Error'] = sampled_mean - exact_fetch
+        res[f'Fetch_{label_str}_Error'] = sampled_mean - exact_fetch
     
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
     
@@ -366,6 +390,8 @@ if __name__ == '__main__':
     def aggregate_metrics(x):
         d = {
             'True_BG_Mean': np.mean(x['True_BG_Pct']),
+            'True_Herb_Mean': np.mean(x['True_Herb_Pct']),
+            'True_Woody_Mean': np.mean(x['True_Woody_Pct']),
             'Exact_Fetch_Mean': np.mean(x['Exact_Fetch'])
         }
         for gap in ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']:
@@ -376,8 +402,17 @@ if __name__ == '__main__':
             d[f'BG_{scale}_MAE'] = np.mean(np.abs(x[f'BG_{scale}_Error']))
             d[f'BG_{scale}_MRE'] = calc_mre(x[f'BG_{scale}_Error'], x['True_BG_Pct'])
             d[f'BG_{scale}_Bias'] = np.mean(x[f'BG_{scale}_Error'])
+
+            d[f'Herb_{scale}_Val'] = np.mean(x[f'Herb_{scale}_Error'] + x['True_Herb_Pct'])
+            d[f'Herb_{scale}_MAE'] = np.mean(np.abs(x[f'Herb_{scale}_Error']))
+            d[f'Herb_{scale}_MRE'] = calc_mre(x[f'Herb_{scale}_Error'], x['True_Herb_Pct'])
+            d[f'Herb_{scale}_Bias'] = np.mean(x[f'Herb_{scale}_Error'])
+
+            d[f'Woody_{scale}_Val'] = np.mean(x[f'Woody_{scale}_Error'] + x['True_Woody_Pct'])
+            d[f'Woody_{scale}_MAE'] = np.mean(np.abs(x[f'Woody_{scale}_Error']))
+            d[f'Woody_{scale}_MRE'] = calc_mre(x[f'Woody_{scale}_Error'], x['True_Woody_Pct'])
+            d[f'Woody_{scale}_Bias'] = np.mean(x[f'Woody_{scale}_Error'])
             
-        # UPDATED: Included 0cm fetch scale
         for scale in ['0cm', '25cm', '50cm', '100cm', '200cm']:
             d[f'Fetch_{scale}_Val'] = np.mean(x[f'Fetch_{scale}_Error'] + x['Exact_Fetch'])
             d[f'Fetch_{scale}_MAE'] = np.mean(np.abs(x[f'Fetch_{scale}_Error']))
@@ -395,7 +430,6 @@ if __name__ == '__main__':
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
     mae_df = mae_df.sort_values('True_BG_Mean').reset_index(drop=True)
 
-    # UPDATED: Plot config includes 0cm scale for Fetch
     plot_config = [
         ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
         ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
@@ -403,7 +437,9 @@ if __name__ == '__main__':
         ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
         ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
         ('Gap_101_200', 'Canopy Gap 101-200cm (%)', ['0cm'], 'darkorange'),
-        ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick')
+        ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick'),
+        ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+        ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
     ]
 
     scale_colors = {
@@ -414,7 +450,8 @@ if __name__ == '__main__':
         '200cm': 'crimson'
     }
 
-    fig, axes = plt.subplots(4, 7, figsize=(28, 16), constrained_layout=True)
+    # Increased width (from 28 to 36) to accommodate 9 subplots instead of 7
+    fig, axes = plt.subplots(4, 9, figsize=(36, 16), constrained_layout=True)
     fig.suptitle("Hybrid Simulation Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
     for col, (prefix, title, scales, col_color) in enumerate(plot_config):
@@ -429,14 +466,18 @@ if __name__ == '__main__':
             ax_val.plot(mae_df['True_BG_Mean'], mae_df['Exact_Fetch_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
         elif prefix.startswith('Gap'):
             ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'Exact_{prefix}_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix == 'Herb':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Herb_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix == 'Woody':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Woody_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
 
         for scale in scales:
             var_base = f'{prefix}_{scale}'
             color = scale_colors[scale] if len(scales) > 1 else col_color
-            label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+            label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
             line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
             
-            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label, **line_kws)
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
             ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], **line_kws)
             ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
             ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
@@ -468,3 +509,4 @@ if __name__ == '__main__':
     
     plt.savefig(img_path, dpi=300, bbox_inches='tight')
     plt.show()
+    
