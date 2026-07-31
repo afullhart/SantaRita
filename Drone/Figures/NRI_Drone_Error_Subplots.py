@@ -21,16 +21,25 @@ df = pd.read_csv(csv_path)
 bins = np.arange(0, 105, 5)
 df['BG_Bin'] = pd.cut(df['Exact_BGR_Pct'], bins=bins, include_lowest=True, right=False)
 
-# Calculate Errors (Sampled - Exact)
-bg_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
-for scale in bg_scales:
+cover_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
+
+# Calculate Errors (Sampled - Exact) for Bare Ground
+for scale in cover_scales:
     df[f'BG_{scale}_Error'] = df[f'NRI_BGR_{scale}_Pct'] - df['Exact_BGR_Pct']
 
-# UPDATED: Added '0cm' to the fetch scales
+# Calculate Errors for Herbaceous and Woody
+for scale in cover_scales:
+    if f'NRI_Herb_{scale}_Pct' in df.columns and 'Exact_Herb_Pct' in df.columns:
+        df[f'Herb_{scale}_Error'] = df[f'NRI_Herb_{scale}_Pct'] - df['Exact_Herb_Pct']
+    if f'NRI_Woody_{scale}_Pct' in df.columns and 'Exact_Woody_Pct' in df.columns:
+        df[f'Woody_{scale}_Error'] = df[f'NRI_Woody_{scale}_Pct'] - df['Exact_Woody_Pct']
+
+# Calculate Errors for Fetch
 fetch_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
 for scale in fetch_scales:
     df[f'Fetch_{scale}_Error'] = df[f'NRI_Fetch_{scale}'] - df['Exact_Fetch_m']
 
+# Calculate Errors for Canopy Gaps
 gap_cols = ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
 for gap in gap_cols:
     df[f'{gap}_0cm_Error'] = df[f'NRI_{gap}'] - df[f'Exact_{gap}']
@@ -58,15 +67,36 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
         'True_Fetch_Mean': group['Exact_Fetch_m'].mean(),
         'Sample_Size': len(group) 
     }
+    if 'Exact_Herb_Pct' in group.columns:
+        d['True_Herb_Mean'] = group['Exact_Herb_Pct'].mean()
+    if 'Exact_Woody_Pct' in group.columns:
+        d['True_Woody_Mean'] = group['Exact_Woody_Pct'].mean()
+        
     for gap in gap_cols:
         d[f'True_{gap}_Mean'] = group[f'Exact_{gap}'].mean()
     
     # Aggregate BG
-    for scale in bg_scales:
+    for scale in cover_scales:
         d[f'BG_{scale}_Val'] = group[f'NRI_BGR_{scale}_Pct'].mean()
         d[f'BG_{scale}_MAE'] = group[f'BG_{scale}_Error'].abs().mean()
         d[f'BG_{scale}_MRE'] = calc_mre(group[f'BG_{scale}_Error'], group['Exact_BGR_Pct'])
         d[f'BG_{scale}_Bias'] = group[f'BG_{scale}_Error'].mean()
+        
+    # Aggregate Herbaceous
+    for scale in cover_scales:
+        if f'Herb_{scale}_Error' in group.columns:
+            d[f'Herb_{scale}_Val'] = group[f'NRI_Herb_{scale}_Pct'].mean()
+            d[f'Herb_{scale}_MAE'] = group[f'Herb_{scale}_Error'].abs().mean()
+            d[f'Herb_{scale}_MRE'] = calc_mre(group[f'Herb_{scale}_Error'], group['Exact_Herb_Pct'])
+            d[f'Herb_{scale}_Bias'] = group[f'Herb_{scale}_Error'].mean()
+
+    # Aggregate Woody
+    for scale in cover_scales:
+        if f'Woody_{scale}_Error' in group.columns:
+            d[f'Woody_{scale}_Val'] = group[f'NRI_Woody_{scale}_Pct'].mean()
+            d[f'Woody_{scale}_MAE'] = group[f'Woody_{scale}_Error'].abs().mean()
+            d[f'Woody_{scale}_MRE'] = calc_mre(group[f'Woody_{scale}_Error'], group['Exact_Woody_Pct'])
+            d[f'Woody_{scale}_Bias'] = group[f'Woody_{scale}_Error'].mean()
         
     # Aggregate Fetch
     for scale in fetch_scales:
@@ -122,13 +152,14 @@ def autoscale_y_robust(ax, margin=0.05, force_zero=False):
 # ====================================================================
 plot_config = [
     ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    # UPDATED: Added '0cm' to the scales list for Fetch
     ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
     ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['0cm'], 'steelblue'),
     ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
     ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
     ('Gap_101_200', 'Canopy Gap 101-200cm (%)', ['0cm'], 'darkorange'),
-    ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick')
+    ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick'),
+    ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
 ]
 
 scale_colors = {
@@ -139,7 +170,7 @@ scale_colors = {
     '200cm': 'crimson'
 }
 
-fig, axes = plt.subplots(4, 7, figsize=(28, 16), constrained_layout=True)
+fig, axes = plt.subplots(4, 9, figsize=(36, 16), constrained_layout=True)
 fig.suptitle("Drone Imagery Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
 
 for col, (prefix, title, scales, col_color) in enumerate(plot_config):
@@ -155,9 +186,16 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Fetch_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
     elif prefix.startswith('Gap'):
         ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'True_{prefix}_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+    elif prefix == 'Herb' and 'True_Herb_Mean' in mae_df.columns:
+        ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Herb_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+    elif prefix == 'Woody' and 'True_Woody_Mean' in mae_df.columns:
+        ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Woody_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
         
     for scale in scales:
         var_base = f'{prefix}_{scale}'
+        if f'{var_base}_Val' not in mae_df.columns:
+            continue
+            
         color = scale_colors[scale] if len(scales) > 1 else col_color
         label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
