@@ -180,11 +180,13 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
     ax.grid(True, alpha=0.3)
     ax.legend(loc='upper left', fontsize=10)
     
-    # Dynamic Axes Labeling based on the 2x5 Grid
-    if col == 0: 
-        if row == 0: ax.set_ylabel("Cover / Score", fontsize=13)
-        else: ax.set_ylabel("Gap Fraction (%)", fontsize=13)
+    # Dynamic Y-Axis Labeling for all subplots
+    if prefix == 'Fetch':
+        ax.set_ylabel("m", fontsize=13)
+    else:
+        ax.set_ylabel("Fraction %", fontsize=13)
             
+    # Dynamic X-Axis Labeling
     if row == 1:
         ax.set_xlabel("True Bare Ground (%)", fontsize=12)
 
@@ -197,10 +199,11 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
                         bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='lightgray'))
 
 # Save Outputs
-img_path = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.png')
+img_path = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.svg')
 csv_path_out = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.csv')
 
-plt.savefig(img_path, dpi=300, bbox_inches='tight')
+# Vector formats like SVG do not strictly require dpi=300, but it does not hurt if there are rasterized elements.
+plt.savefig(img_path, format='svg', dpi=300, bbox_inches='tight')
 plt.show()
 
 val_df.to_csv(csv_path_out, index=False)
