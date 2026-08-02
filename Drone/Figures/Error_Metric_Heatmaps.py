@@ -30,10 +30,52 @@ scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
 results = []
 
 # ====================================================================
-# 2. CALCULATE METRICS IN A SINGLE PASS
+# 2. NON-PARAMETRIC BOOTSTRAP FUNCTION
+# ====================================================================
+def compute_pi_width(X, Y, n_boot=2000, alpha=0.05):
+    """Calculates the mean width of non-parametric prediction intervals."""
+    n = len(X)
+    pi_preds = np.zeros((n_boot, n))
+
+    for i in range(n_boot):
+        # Pairs Bootstrapping
+        indices = np.random.choice(n, size=n, replace=True)
+        x_boot = X[indices]
+        y_boot = Y[indices]
+
+        # Fit Bootstrap Model using Theil-Sen Estimator
+        if np.std(x_boot) == 0:
+            slope, intercept = 0, np.median(y_boot)
+        else:
+            res = stats.mstats.theilslopes(y_boot, x_boot)
+            slope, intercept = res[0], res[1]
+
+        # Calculate Empirical Residuals
+        residuals = y_boot - (slope * x_boot + intercept)
+
+        # Predict over the ORIGINAL X values
+        y_hat = slope * X + intercept
+
+        # Add Resampled Residuals
+        noise = np.random.choice(residuals, size=n, replace=True)
+        pi_preds[i, :] = y_hat + noise
+
+    # Extract Percentiles for the Bounds
+    lower_pct = (alpha / 2) * 100
+    upper_pct = (1 - alpha / 2) * 100
+
+    pi_lo = np.percentile(pi_preds, lower_pct, axis=0)
+    pi_up = np.percentile(pi_preds, upper_pct, axis=0)
+
+    # Return the Mean PI Width
+    return np.mean(pi_up - pi_lo)
+
+
+# ====================================================================
+# 3. CALCULATE METRICS IN A SINGLE PASS
 # ====================================================================
 def calculate_stats(scl, x_vals, y_vals):
-    """Calculates Pearson r, Spearman rho, Sen's Slope (with Sig), PBIAS, MAE, and MRE"""
+    """Calculates Pearson r, Spearman rho, Sen's Slope (with Sig), PBIAS, MAE, MRE, and MPIW"""
     if len(x_vals) > 1:
         # Correlations
         r, _ = stats.pearsonr(x_vals, y_vals)
@@ -47,6 +89,9 @@ def calculate_stats(scl, x_vals, y_vals):
         # Percent Bias
         sum_x = np.sum(x_vals)
         pbias = (np.sum(y_vals - x_vals) / sum_x) * 100 if sum_x != 0 else np.nan
+        
+        # Mean Prediction Interval Width (Bootstrapped)
+        mpiw = compute_pi_width(x_vals.values, y_vals.values, n_boot=2000)
         
         # Significance of Sen's Slope != 1 (1-Tailed Mann-Kendall)
         y_trans = y_vals - x_vals
@@ -66,9 +111,11 @@ def calculate_stats(scl, x_vals, y_vals):
             'Metric': metric, 'Scale': scl, 
             'r': r, 'rho': rho, 
             'Sens_Slope': sens, 'Sig_Slope': is_sig, 
-            'PBIAS': pbias, 'MAE': mae, 'MRE': mre
+            'PBIAS': pbias, 'MAE': mae, 'MRE': mre, 'MPIW': mpiw
         }
     return None
+
+print("Calculating metrics and non-parametric prediction intervals. This may take a moment...")
 
 for metric, info in metrics_info.items():
     exact_col = info['exact']
@@ -98,7 +145,7 @@ for metric, info in metrics_info.items():
 res_df = pd.DataFrame(results)
 
 # ====================================================================
-# 3. PIVOT & REORDER DATA
+# 4. PIVOT & REORDER DATA
 # ====================================================================
 r_pivot = res_df.pivot(index='Metric', columns='Scale', values='r')
 rho_pivot = res_df.pivot(index='Metric', columns='Scale', values='rho')
@@ -107,19 +154,20 @@ sig_pivot = res_df.pivot(index='Metric', columns='Scale', values='Sig_Slope')
 pbias_pivot = res_df.pivot(index='Metric', columns='Scale', values='PBIAS')
 mae_pivot = res_df.pivot(index='Metric', columns='Scale', values='MAE')
 mre_pivot = res_df.pivot(index='Metric', columns='Scale', values='MRE')
+mpiw_pivot = res_df.pivot(index='Metric', columns='Scale', values='MPIW')
 
 # Applied ordering from top-to-bottom
 metric_order = ['BGR', 'HP', 'WP', 'MF', 'CGF 0-24 cm', 'CGF 25-50 cm', 'CGF 51-100 cm', 'CGF 101-200 cm', 'CGF +200 cm']
 scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
 
 # Safe reindexing to maintain desired visual plotting order
-pivots = [r_pivot, rho_pivot, sens_pivot, sig_pivot, pbias_pivot, mae_pivot, mre_pivot]
+pivots = [r_pivot, rho_pivot, sens_pivot, sig_pivot, pbias_pivot, mae_pivot, mre_pivot, mpiw_pivot]
 for i in range(len(pivots)):
     pivots[i] = pivots[i].reindex(index=[m for m in metric_order if m in pivots[i].index], columns=scale_order)
-r_pivot, rho_pivot, sens_pivot, sig_pivot, pbias_pivot, mae_pivot, mre_pivot = pivots
+r_pivot, rho_pivot, sens_pivot, sig_pivot, pbias_pivot, mae_pivot, mre_pivot, mpiw_pivot = pivots
 
 # ====================================================================
-# 4. HELPERS FOR HEATMAP VISUALS
+# 5. HELPERS FOR HEATMAP VISUALS
 # ====================================================================
 def add_strikes(ax, data_pivot):
     """Draws a diagonal strike through cells that contain NaN values."""
@@ -141,7 +189,7 @@ for i in range(sens_pivot.shape[0]):
             sens_annot[i, j] = f"{val:.2f}*" if is_sig else f"{val:.2f}"
 
 # ====================================================================
-# 5. PLOTTING - FIGURE 1: Pearson r, Spearman rho, & Sen's Slope
+# 6. PLOTTING - FIGURE 1: Pearson r, Spearman rho, & Sen's Slope
 # ====================================================================
 fig1, axes1 = plt.subplots(1, 3, figsize=(24, 6))
 
@@ -165,7 +213,7 @@ axes1[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
 sns.heatmap(sens_pivot, annot=sens_annot, fmt="", cmap="vlag", center=1.0, ax=axes1[2], 
             cbar_kws={'label': "Sen's Slope"}, mask=sens_pivot.isnull()) 
 add_strikes(axes1[2], sens_pivot)  
-axes1[2].set_title("Sen's Slope\nExact vs Sampled (1.0 = Perfect 1:1, * = Sig < 1 or > 1)", pad=15, fontweight='bold')
+axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", pad=15, fontweight='bold')
 axes1[2].set_ylabel('')
 axes1[2].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
 
@@ -174,7 +222,7 @@ plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.png', dpi=30
 plt.show()
 
 # ====================================================================
-# 6. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
+# 7. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
 # ====================================================================
 fig2, axes2 = plt.subplots(1, 3, figsize=(24, 6))
 
@@ -205,3 +253,22 @@ axes2[2].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
 plt.tight_layout()
 plt.savefig(r'C:\Users\andre\ScatterPlots\Error_Metrics_Heatmaps.png', dpi=300, bbox_inches='tight')
 plt.show()
+
+# ====================================================================
+# 8. PLOTTING - FIGURE 3: Mean Prediction Interval Width (MPIW)
+# ====================================================================
+fig3, ax3 = plt.subplots(figsize=(8, 6))
+
+# Single Plot: Mean Prediction Interval Width
+sns.heatmap(mpiw_pivot, annot=True, fmt=".2f", cmap="Purples", ax=ax3, 
+            cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
+add_strikes(ax3, mpiw_pivot)  
+ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=15, fontweight='bold')
+ax3.set_ylabel('Ground Cover Metric', fontweight='bold')
+ax3.set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+
+plt.tight_layout()
+plt.savefig(r'C:\Users\andre\ScatterPlots\Mean_PI_Width_Heatmap.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+print("Processing complete. Heatmaps saved to C:\\Users\\andre\\ScatterPlots\\")
