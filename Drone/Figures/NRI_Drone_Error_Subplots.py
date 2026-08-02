@@ -135,7 +135,7 @@ scale_colors = {
 # 5. FIGURE GENERATION
 # ====================================================================
 fig, axes = plt.subplots(2, 5, figsize=(28, 10), constrained_layout=True)
-fig.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=20, weight='bold')
+fig.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=24, weight='bold')
 
 for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
     row = idx // 5
@@ -173,36 +173,39 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
     autoscale_y_robust(ax, force_zero=False)
         
     # Formatting
-    ax.set_title(title, fontsize=15, pad=12)
+    ax.set_title(title, fontsize=18, pad=12) 
     ax.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax.set_xlim(0, 100)
     ax.set_xticks(np.arange(0, 81, 20))  
+    ax.tick_params(axis='both', which='major', labelsize=12) 
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='upper left', fontsize=10)
+    
+    # Only add legend if there are labels to display (Moved to top right)
+    if ax.get_legend_handles_labels()[0]:
+        ax.legend(loc='upper right', fontsize=12) 
     
     # Dynamic Y-Axis Labeling for all subplots
     if prefix == 'Fetch':
-        ax.set_ylabel("m", fontsize=13)
+        ax.set_ylabel("m", fontsize=15) 
     else:
-        ax.set_ylabel("Fraction %", fontsize=13)
+        ax.set_ylabel("Fraction %", fontsize=15) 
             
     # Dynamic X-Axis Labeling
     if row == 1:
-        ax.set_xlabel("True Bare Ground (%)", fontsize=12)
+        ax.set_xlabel("True Bare Ground (%)", fontsize=14) 
 
     # Re-apply Sample Size annotations on the bottom of the top-left plot (BGR)
     if idx == 0: 
         for _, r in val_df.iterrows():
             ax.text(r['True_BG_Mean'], 0.02, f"n={int(r['Sample_Size'])}", 
                         transform=ax.get_xaxis_transform(), 
-                        fontsize=9, color='black', ha='center', va='bottom', rotation=90, 
+                        fontsize=11, color='black', ha='center', va='bottom', rotation=90, 
                         bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='lightgray'))
 
 # Save Outputs
 img_path = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.svg')
 csv_path_out = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.csv')
 
-# Vector formats like SVG do not strictly require dpi=300, but it does not hurt if there are rasterized elements.
 plt.savefig(img_path, format='svg', dpi=300, bbox_inches='tight')
 plt.show()
 
