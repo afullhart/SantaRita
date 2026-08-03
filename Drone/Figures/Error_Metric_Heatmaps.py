@@ -9,6 +9,12 @@ import warnings
 warnings.filterwarnings('ignore', category=RuntimeWarning)
 
 # ====================================================================
+# GLOBAL PLOT SETTINGS
+# ====================================================================
+# Base font size for colorbars and ticks to ensure readability
+plt.rcParams.update({'font.size': 14}) 
+
+# ====================================================================
 # 1. LOAD DATA & DEFINE MAPPINGS
 # ====================================================================
 df = pd.read_csv(r"C:\Users\andre\ScatterPlots\SRER_NRI_Plots_110m.csv")
@@ -175,7 +181,7 @@ def add_strikes(ax, data_pivot):
         for j in range(data_pivot.shape[1]):
             if pd.isna(data_pivot.iloc[i, j]):
                 # Draw a diagonal line from bottom-left to top-right of the cell
-                ax.plot([j, j+1], [i+1, i], color='gray', lw=1.5)
+                ax.plot([j, j+1], [i+1, i], color='gray', lw=2.0)
 
 # Create custom string annotations for Sen's Slope to append asterisks
 sens_annot = np.empty_like(sens_pivot.values, dtype=object)
@@ -191,84 +197,95 @@ for i in range(sens_pivot.shape[0]):
 # ====================================================================
 # 6. PLOTTING - FIGURE 1: Pearson r, Spearman rho, & Sen's Slope
 # ====================================================================
-fig1, axes1 = plt.subplots(1, 3, figsize=(24, 6))
+# Widened to 21x8 to prevent horizontal text overlap while keeping fonts large
+fig1, axes1 = plt.subplots(1, 3, figsize=(21, 8))
 
 # Left Plot: Pearson r
 sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[0], 
-            cbar_kws={'label': 'Pearson $r$'}, mask=r_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': 'Pearson $r$'}, mask=r_pivot.isnull()) 
 add_strikes(axes1[0], r_pivot)  
-axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=15, fontweight='bold')
-axes1[0].set_ylabel('Ground Cover Metric', fontweight='bold')
-axes1[0].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=20, fontsize=18, fontweight='bold')
+axes1[0].set_ylabel('Ground Cover Metric', fontsize=16, fontweight='bold')
+axes1[0].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes1[0].tick_params(axis='both', which='major', labelsize=14)
 
 # Middle Plot: Spearman rho
 sns.heatmap(rho_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[1], 
-            cbar_kws={'label': r'Spearman $\rho$'}, mask=rho_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': r'Spearman $\rho$'}, mask=rho_pivot.isnull()) 
 add_strikes(axes1[1], rho_pivot)  
-axes1[1].set_title(r'Spearman Rank Correlation ($\rho$)' + '\nExact vs Sampled', pad=15, fontweight='bold')
+axes1[1].set_title(r'Spearman Rank Correlation ($\rho$)' + '\nExact vs Sampled', pad=20, fontsize=18, fontweight='bold')
 axes1[1].set_ylabel('')
-axes1[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes1[1].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes1[1].tick_params(axis='both', which='major', labelsize=14)
 
 # Right Plot: Sen's Slope (with Significance Asterisks)
 sns.heatmap(sens_pivot, annot=sens_annot, fmt="", cmap="vlag", center=1.0, ax=axes1[2], 
-            cbar_kws={'label': "Sen's Slope"}, mask=sens_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': "Sen's Slope"}, mask=sens_pivot.isnull()) 
 add_strikes(axes1[2], sens_pivot)  
-axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", pad=15, fontweight='bold')
+axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", pad=20, fontsize=18, fontweight='bold')
 axes1[2].set_ylabel('')
-axes1[2].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes1[2].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes1[2].tick_params(axis='both', which='major', labelsize=14)
 
-plt.tight_layout()
-plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.png', dpi=300, bbox_inches='tight')
+# Use w_pad to ensure the labels between subplots don't overlap
+plt.tight_layout(w_pad=2.0)
+plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
 
 # ====================================================================
 # 7. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
 # ====================================================================
-fig2, axes2 = plt.subplots(1, 3, figsize=(24, 6))
+# Widened to 21x8 to prevent horizontal text overlap
+fig2, axes2 = plt.subplots(1, 3, figsize=(21, 8))
 
 # Left Plot: Percent Bias (PBIAS)
 sns.heatmap(pbias_pivot, annot=True, fmt=".2f", cmap="vlag", center=0, ax=axes2[0], 
-            cbar_kws={'label': 'Percent Bias (%)'}, mask=pbias_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': 'Percent Bias (%)'}, mask=pbias_pivot.isnull()) 
 add_strikes(axes2[0], pbias_pivot)  
-axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', pad=15, fontweight='bold')
-axes2[0].set_ylabel('Ground Cover Metric', fontweight='bold')
-axes2[0].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', pad=20, fontsize=18, fontweight='bold')
+axes2[0].set_ylabel('Ground Cover Metric', fontsize=16, fontweight='bold')
+axes2[0].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes2[0].tick_params(axis='both', which='major', labelsize=14)
 
 # Middle Plot: Mean Absolute Error (MAE)
 sns.heatmap(mae_pivot, annot=True, fmt=".2f", cmap="Reds", ax=axes2[1], 
-            cbar_kws={'label': 'Mean Absolute Error'}, mask=mae_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': 'Mean Absolute Error'}, mask=mae_pivot.isnull()) 
 add_strikes(axes2[1], mae_pivot)  
-axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', pad=15, fontweight='bold')
+axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', pad=20, fontsize=18, fontweight='bold')
 axes2[1].set_ylabel('')
-axes2[1].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes2[1].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes2[1].tick_params(axis='both', which='major', labelsize=14)
 
 # Right Plot: Mean Relative Error (MRE)
 sns.heatmap(mre_pivot, annot=True, fmt=".2f", cmap="Oranges", ax=axes2[2], 
-            cbar_kws={'label': "Mean Relative Error (%)"}, mask=mre_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': "Mean Relative Error (%)"}, mask=mre_pivot.isnull()) 
 add_strikes(axes2[2], mre_pivot)  
-axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", pad=15, fontweight='bold')
+axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", pad=20, fontsize=18, fontweight='bold')
 axes2[2].set_ylabel('')
-axes2[2].set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+axes2[2].set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+axes2[2].tick_params(axis='both', which='major', labelsize=14)
 
-plt.tight_layout()
-plt.savefig(r'C:\Users\andre\ScatterPlots\Error_Metrics_Heatmaps.png', dpi=300, bbox_inches='tight')
+plt.tight_layout(w_pad=2.0)
+plt.savefig(r'C:\Users\andre\ScatterPlots\Error_Metrics_Heatmaps.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
 
 # ====================================================================
 # 8. PLOTTING - FIGURE 3: Mean Prediction Interval Width (MPIW)
 # ====================================================================
-fig3, ax3 = plt.subplots(figsize=(8, 6))
+# Adjusted to match the individual subplot proportions of the widened figures
+fig3, ax3 = plt.subplots(figsize=(8, 8))
 
 # Single Plot: Mean Prediction Interval Width
 sns.heatmap(mpiw_pivot, annot=True, fmt=".2f", cmap="Purples", ax=ax3, 
-            cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
+            annot_kws={"size": 15}, cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
 add_strikes(ax3, mpiw_pivot)  
-ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=15, fontweight='bold')
-ax3.set_ylabel('Ground Cover Metric', fontweight='bold')
-ax3.set_xlabel('NRI Transect Sampling Scale', fontweight='bold')
+ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=20, fontsize=18, fontweight='bold')
+ax3.set_ylabel('Ground Cover Metric', fontsize=16, fontweight='bold')
+ax3.set_xlabel('NRI Transect Sampling Scale', fontsize=16, fontweight='bold')
+ax3.tick_params(axis='both', which='major', labelsize=14)
 
 plt.tight_layout()
-plt.savefig(r'C:\Users\andre\ScatterPlots\Mean_PI_Width_Heatmap.png', dpi=300, bbox_inches='tight')
+plt.savefig(r'C:\Users\andre\ScatterPlots\Mean_PI_Width_Heatmap.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
 
 print("Processing complete. Heatmaps saved to C:\\Users\\andre\\ScatterPlots\\")
