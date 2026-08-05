@@ -430,6 +430,17 @@ if __name__ == '__main__':
     mae_df = df.groupby('BG_Bin').apply(aggregate_metrics).reset_index()
     mae_df = mae_df.sort_values('True_BG_Mean').reset_index(drop=True)
 
+    scale_colors = {
+        '0cm': 'black',
+        '25cm': 'forestgreen',
+        '50cm': 'dodgerblue',
+        '100cm': 'darkorange',
+        '200cm': 'crimson'
+    }
+
+    # ====================================================================
+    # PLOTTING - FIGURE 1: Original 4x9 Configuration
+    # ====================================================================
     plot_config = [
         ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
         ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
@@ -442,15 +453,6 @@ if __name__ == '__main__':
         ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
     ]
 
-    scale_colors = {
-        '0cm': 'black',
-        '25cm': 'forestgreen',
-        '50cm': 'dodgerblue',
-        '100cm': 'darkorange',
-        '200cm': 'crimson'
-    }
-
-    # Increased width (from 28 to 36) to accommodate 9 subplots instead of 7
     fig, axes = plt.subplots(4, 9, figsize=(36, 16), constrained_layout=True)
     fig.suptitle("Hybrid Simulation Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
@@ -503,10 +505,147 @@ if __name__ == '__main__':
         ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
         if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
 
+    # ====================================================================
+    # PLOTTING - FIGURE 2: COVER METRICS (BG, HERB, WOODY) - 3 Rows x 4 Cols
+    # ====================================================================
+    fig2_config = [
+        ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+        ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+        ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
+    ]
+
+    fig2, axes2 = plt.subplots(3, 4, figsize=(16, 12), constrained_layout=True)
+    fig2.suptitle("Hybrid Simulation Cover Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+
+    for row, (prefix, title, scales, col_color) in enumerate(fig2_config):
+        ax_val = axes2[row, 0]
+        ax_mae = axes2[row, 1]
+        ax_mre = axes2[row, 2]
+        ax_bias = axes2[row, 3]
+
+        if prefix == 'BG':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_BG_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix == 'Herb':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Herb_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix == 'Woody':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['True_Woody_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+
+        for scale in scales:
+            var_base = f'{prefix}_{scale}'
+            color = scale_colors[scale] if len(scales) > 1 else col_color
+            label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+            line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
+            
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
+            ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], **line_kws)
+            ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
+            ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
+
+        for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
+            ax.set_xlim(0, 100)
+            ax.set_xticks(np.arange(0, 81, 20)) 
+            
+        ax_val.set_ylabel(title, fontsize=13, weight='bold') 
+        ax_val.grid(True, alpha=0.3)
+        
+        if row == 0:
+            ax_val.legend(loc='upper left', fontsize=10)
+
+        ax_mae.grid(True, alpha=0.3)
+        ax_mre.grid(True, alpha=0.3)
+
+        ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
+        ax_bias.grid(True, alpha=0.3)
+
+        if row == 0:
+            ax_val.set_title("Sampled Value", fontsize=15, pad=12)
+            ax_mae.set_title("MAE", fontsize=15, pad=12)
+            ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
+            ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+
+        if row == 2:
+            for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
+                ax.set_xlabel("True Bare Ground (%)", fontsize=12)
+
+    # ====================================================================
+    # PLOTTING - FIGURE 3: SPATIAL METRICS (FETCH, GAPS) - 6 Rows x 4 Cols
+    # ====================================================================
+    fig3_config = [
+        ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+        ('Gap_0_24', 'Canopy Gap\n0-24cm (%)', ['0cm'], 'steelblue'),
+        ('Gap_25_50', 'Canopy Gap\n25-50cm (%)', ['0cm'], 'cadetblue'),
+        ('Gap_51_100', 'Canopy Gap\n51-100cm (%)', ['0cm'], 'mediumseagreen'),
+        ('Gap_101_200', 'Canopy Gap\n101-200cm (%)', ['0cm'], 'darkorange'),
+        ('Gap_gt_200', 'Canopy Gap\n>200cm (%)', ['0cm'], 'firebrick')
+    ]
+
+    fig3, axes3 = plt.subplots(6, 4, figsize=(16, 24), constrained_layout=True)
+    fig3.suptitle("Hybrid Simulation Spatial Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+
+    for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
+        ax_val = axes3[row, 0]
+        ax_mae = axes3[row, 1]
+        ax_mre = axes3[row, 2]
+        ax_bias = axes3[row, 3]
+
+        if prefix == 'Fetch':
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df['Exact_Fetch_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+        elif prefix.startswith('Gap'):
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'Exact_{prefix}_Mean'], color='gray', linestyle='--', linewidth=2, label='Exact True Value', zorder=1)
+
+        for scale in scales:
+            var_base = f'{prefix}_{scale}'
+            color = scale_colors[scale] if len(scales) > 1 else col_color
+            label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+            line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
+            
+            ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
+            ax_mae.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MAE'], **line_kws)
+            ax_mre.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_MRE'], **line_kws)
+            ax_bias.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Bias'], **line_kws)
+
+        for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
+            ax.set_xlim(0, 100)
+            ax.set_xticks(np.arange(0, 81, 20)) 
+            
+        ax_val.set_ylabel(title, fontsize=13, weight='bold') 
+        ax_val.grid(True, alpha=0.3)
+        
+        # Determine legend placement based on whether the data trends up or down
+        last_var_base = f'{prefix}_{scales[-1]}'
+        start_val = mae_df[f'{last_var_base}_Val'].iloc[0]
+        end_val = mae_df[f'{last_var_base}_Val'].iloc[-1]
+        leg_loc = 'upper left' if end_val >= start_val else 'upper right'
+        
+        ax_val.legend(loc=leg_loc, fontsize=10)
+
+        ax_mae.grid(True, alpha=0.3)
+        ax_mre.grid(True, alpha=0.3)
+
+        ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
+        ax_bias.grid(True, alpha=0.3)
+
+        if row == 0:
+            ax_val.set_title("Sampled Value", fontsize=15, pad=12)
+            ax_mae.set_title("MAE", fontsize=15, pad=12)
+            ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
+            ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+
+        if row == 5:
+            for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
+                ax.set_xlabel("True Bare Ground (%)", fontsize=12)
+
+    # ====================================================================
+    # SAVING AND SHOWING PLOTS
+    # ====================================================================
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.png')
+    img_path1 = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.png')
+    img_path2 = os.path.join(script_dir, 'Hybrid_Simulation_Cover_Metrics.png')
+    img_path3 = os.path.join(script_dir, 'Hybrid_Simulation_Spatial_Metrics_Rows.png')
     csv_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.csv')
     
-    plt.savefig(img_path, dpi=300, bbox_inches='tight')
-    plt.show()
+    fig.savefig(img_path1, dpi=300, bbox_inches='tight')
+    fig2.savefig(img_path2, dpi=300, bbox_inches='tight')
+    fig3.savefig(img_path3, dpi=300, bbox_inches='tight')
     
+    plt.show()
