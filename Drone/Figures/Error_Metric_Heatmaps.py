@@ -162,7 +162,7 @@ mae_pivot = res_df.pivot(index='Metric', columns='Scale', values='MAE')
 mre_pivot = res_df.pivot(index='Metric', columns='Scale', values='MRE')
 mpiw_pivot = res_df.pivot(index='Metric', columns='Scale', values='MPIW')
 
-# Applied ordering from top-to-bottom with new labels
+# Applied ordering from top-to-bottom with original labels
 metric_order = ['BGR', 'HP', 'WP', 'MF', 'CGF 0-24', 'CGF 25-50', 'CGF 51-100', 'CGF 101-200', 'CGF +200']
 scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
 
@@ -205,7 +205,7 @@ sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[0],
             annot_kws={"size": 18}, cbar_kws={'label': 'Pearson $r$'}, mask=r_pivot.isnull()) 
 add_strikes(axes1[0], r_pivot)  
 axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=20, fontsize=22, fontweight='bold')
-axes1[0].set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold')
+axes1[0].set_ylabel('') # Removed ylabel to allow subplots to expand
 axes1[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[0].tick_params(axis='both', which='major', labelsize=16)
 
@@ -243,7 +243,7 @@ sns.heatmap(pbias_pivot, annot=True, fmt=".2f", cmap="vlag", center=0, ax=axes2[
             annot_kws={"size": 18}, cbar_kws={'label': 'Percent Bias (%)'}, mask=pbias_pivot.isnull()) 
 add_strikes(axes2[0], pbias_pivot)  
 axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', pad=20, fontsize=22, fontweight='bold')
-axes2[0].set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold')
+axes2[0].set_ylabel('') # Removed ylabel to allow subplots to expand
 axes2[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[0].tick_params(axis='both', which='major', labelsize=16)
 
@@ -280,7 +280,7 @@ sns.heatmap(mpiw_pivot, annot=True, fmt=".2f", cmap="Purples", ax=ax3,
             annot_kws={"size": 18}, cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
 add_strikes(ax3, mpiw_pivot)  
 ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=20, fontsize=22, fontweight='bold')
-ax3.set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold')
+ax3.set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold') # Kept this as originally requested by your initial code
 ax3.set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 ax3.tick_params(axis='both', which='major', labelsize=16)
 
