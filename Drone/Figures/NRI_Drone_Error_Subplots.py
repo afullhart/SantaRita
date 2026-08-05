@@ -109,18 +109,18 @@ def autoscale_y_robust(ax, margin=0.05, force_zero=False):
 # ====================================================================
 plot_config = [
     # Top Row: BGR, HP, WP, MF, LPI
-    ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('LPI', 'Largest Patch Index (%)', [], 'black'), # Empty scales list skips the sampled line plot
+    ('BG', 'Total Bare\nGround (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Herb', 'Herbaceous\nCover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Woody', 'Woody\nCover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Fetch', 'Mean\nFetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('LPI', 'Largest Patch\nIndex (%)', [], 'black'), 
 
     # Bottom Row: CGF fractions
-    ('Gap_0_24', 'Canopy Gap 0-24 cm (%)', ['0cm'], 'steelblue'),
-    ('Gap_25_50', 'Canopy Gap 25-50 cm (%)', ['0cm'], 'cadetblue'),
-    ('Gap_51_100', 'Canopy Gap 51-100 cm (%)', ['0cm'], 'mediumseagreen'),
-    ('Gap_101_200', 'Canopy Gap 101-200 cm (%)', ['0cm'], 'darkorange'),
-    ('Gap_gt_200', 'Canopy Gap +200 cm (%)', ['0cm'], 'firebrick')
+    ('Gap_0_24', 'Canopy Gap\n0-24 cm (%)', ['0cm'], 'steelblue'),
+    ('Gap_25_50', 'Canopy Gap\n25-50 cm (%)', ['0cm'], 'cadetblue'),
+    ('Gap_51_100', 'Canopy Gap\n51-100 cm (%)', ['0cm'], 'mediumseagreen'),
+    ('Gap_101_200', 'Canopy Gap\n101-200 cm (%)', ['0cm'], 'darkorange'),
+    ('Gap_gt_200', 'Canopy Gap\n+200 cm (%)', ['0cm'], 'firebrick')
 ]
 
 scale_colors = {
@@ -134,13 +134,25 @@ scale_colors = {
 # ====================================================================
 # 5. FIGURE GENERATION
 # ====================================================================
-fig, axes = plt.subplots(2, 5, figsize=(28, 10), constrained_layout=True)
-fig.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=24, weight='bold')
+# Reduce the default layout spacing to squeeze subplots closer together
+plt.rcParams.update({
+    'figure.constrained_layout.use': True,
+    'figure.constrained_layout.w_pad': 0.02,
+    'figure.constrained_layout.h_pad': 0.02,
+    'figure.constrained_layout.wspace': 0.02,
+    'figure.constrained_layout.hspace': 0.02,
+})
+
+fig, axes = plt.subplots(2, 5, figsize=(11, 5))
+fig.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=20, weight='bold')
 
 for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
     row = idx // 5
     col = idx % 5
     ax = axes[row, col]
+    
+    # Generate letter designation (a, b, c...)
+    letter = chr(ord('a') + idx)
     
     # Route the correct exact true value column
     if prefix == 'BG': true_col = 'True_BG_Mean'
@@ -152,10 +164,9 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
 
     # Plot Exact Reference Line
     if true_col in val_df.columns:
-        # LPI stands alone, so setting its exact line to a bold solid color makes it stand out
         linestyle = '-' if prefix == 'LPI' else '--'
         linecolor = 'black' if prefix == 'LPI' else 'gray'
-        ax.plot(val_df['True_BG_Mean'], val_df[true_col], color=linecolor, linestyle=linestyle, linewidth=2, label='Exact True Value', zorder=1)
+        ax.plot(val_df['True_BG_Mean'], val_df[true_col], color=linecolor, linestyle=linestyle, linewidth=2, label='Exact Value', zorder=1)
         
     # Plot Sampled Data Lines
     for scale in scales:
@@ -164,43 +175,55 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config):
             continue
             
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        label = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
-        line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
+        label = f'{scale}' if scale != '0cm' else '0cm Cont.'
+        line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 6}
         
         ax.plot(val_df['True_BG_Mean'], val_df[f'{var_base}_Val'], label=label, **line_kws)
         
     # Apply strict Y-Axis autoscaling
     autoscale_y_robust(ax, force_zero=False)
         
-    # Formatting
-    ax.set_title(title, fontsize=18, pad=12) 
+    # Formatting (Bold the letter using MathText formatting)
+    title_str = r"$\mathbf{" + letter + r".}$ " + title
+    ax.set_title(title_str, fontsize=14, pad=8) 
     ax.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax.set_xlim(0, 100)
-    ax.set_xticks(np.arange(0, 81, 20))  
-    ax.tick_params(axis='both', which='major', labelsize=12) 
+    
+    ax.set_xticks([0, 50, 100])  
+    
+    # Changed labelsize to 7.5 to match the legend font size
+    ax.tick_params(axis='both', which='major', labelsize=7.5) 
     ax.grid(True, alpha=0.3)
     
-    # Only add legend if there are labels to display (Moved to top right)
+    # Ultra-Compact Legend
     if ax.get_legend_handles_labels()[0]:
-        ax.legend(loc='upper right', fontsize=12) 
-    
-    # Dynamic Y-Axis Labeling for all subplots
-    if prefix == 'Fetch':
-        ax.set_ylabel("m", fontsize=15) 
-    else:
-        ax.set_ylabel("Fraction %", fontsize=15) 
+        ax.legend(loc='best', fontsize=7.5, handlelength=1.0, borderpad=0.2, labelspacing=0.1, handletextpad=0.4, framealpha=0.7) 
             
-    # Dynamic X-Axis Labeling
+    # --- X-Axis Labeling Logic ---
     if row == 1:
-        ax.set_xlabel("True Bare Ground (%)", fontsize=14) 
+        if col == 2:
+            ax.set_xlabel("True Bare Ground (%)", fontsize=15, weight='bold') 
+        else:
+            ax.set_xlabel("")
 
-    # Re-apply Sample Size annotations on the bottom of the top-left plot (BGR)
+    # N-size annotations (Split top and bottom regions to prevent overlap, reduced fontsize to 6)
     if idx == 0: 
-        for _, r in val_df.iterrows():
-            ax.text(r['True_BG_Mean'], 0.02, f"n={int(r['Sample_Size'])}", 
+        for i, (_, r) in enumerate(val_df.iterrows()):
+            if i < 4:
+                # Top left region for first four points
+                y_pos = 0.98
+                va_align = 'top'
+            else:
+                # Bottom center region for the remaining points
+                y_pos = 0.02
+                va_align = 'bottom'
+                
+            ax.text(r['True_BG_Mean'], y_pos, f"n={int(r['Sample_Size'])}", 
                         transform=ax.get_xaxis_transform(), 
-                        fontsize=11, color='black', ha='center', va='bottom', rotation=90, 
-                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='lightgray'))
+                        fontsize=6, color='black', ha='center', va=va_align, rotation=90)
+
+# --- Y-Axis Labeling Logic ---
+fig.supylabel("Fraction % (or, m for Mean Fetch)", fontsize=14, weight='bold')
 
 # Save Outputs
 img_path = os.path.join(base_dir, 'Drone_Metrics_Values_2x5.svg')
