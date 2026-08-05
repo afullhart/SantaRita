@@ -639,13 +639,13 @@ if __name__ == '__main__':
     # SAVING AND SHOWING PLOTS
     # ====================================================================
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path1 = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.png')
-    img_path2 = os.path.join(script_dir, 'Hybrid_Simulation_Cover_Metrics.png')
-    img_path3 = os.path.join(script_dir, 'Hybrid_Simulation_Spatial_Metrics_Rows.png')
+    img_path1 = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.svg')
+    img_path2 = os.path.join(script_dir, 'Hybrid_Simulation_Cover_Metrics.svg')
+    img_path3 = os.path.join(script_dir, 'Hybrid_Simulation_Spatial_Metrics_Rows.svg')
     csv_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.csv')
     
-    fig.savefig(img_path1, dpi=300, bbox_inches='tight')
-    fig2.savefig(img_path2, dpi=300, bbox_inches='tight')
-    fig3.savefig(img_path3, dpi=300, bbox_inches='tight')
+    fig.savefig(img_path1, format='svg', dpi=300, bbox_inches='tight')
+    fig2.savefig(img_path2, format='svg', dpi=300, bbox_inches='tight')
+    fig3.savefig(img_path3, format='svg', dpi=300, bbox_inches='tight')
     
     plt.show()
