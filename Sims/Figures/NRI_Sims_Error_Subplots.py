@@ -67,7 +67,7 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    alpha_large = 0.33
+    alpha_large = 0.75
     lambda_large = lambda_target * alpha_large
     lambda_small = lambda_target * (1 - alpha_large)
     
@@ -196,20 +196,24 @@ def process_simulation_iteration(task):
                 small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
     # ==========================================
-    # SEPARATE WOODY SHRUBS FROM HERBACEOUS COVER
+    # SEPARATE WOODY SHRUBS FROM HERBACEOUS COVER (VECTORIZED)
     # ==========================================
     if target_bg <= 50:
         prob_dark = np.interp(target_bg, [5, 50], [0.05, 0.45])
+    else:
+        prob_dark = np.interp(target_bg, [50, 100], [0.45, 1.0])
 
-        labeled_large, num_large_features = label(large_mask)
-        true_shrub_mask = np.zeros_like(large_mask, dtype=bool)
+    labeled_large, num_large_features = label(large_mask)
+    
+    # Vectorized probability assignment to bypass the slow for-loop
+    keep_mask = np.random.rand(num_large_features + 1) <= prob_dark
+    keep_mask[0] = False  # Always drop the background (label 0)
+    
+    # Map the booleans directly back to the 2D grid in one fast step
+    true_shrub_mask = keep_mask[labeled_large]
 
-        for patch_id in range(1, num_large_features + 1):
-            if np.random.rand() <= prob_dark:
-                true_shrub_mask[labeled_large == patch_id] = True
-
-        small_mask |= (large_mask & ~true_shrub_mask)
-        large_mask = true_shrub_mask
+    small_mask |= (large_mask & ~true_shrub_mask)
+    large_mask = true_shrub_mask
 
     # ==========================================
     # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
@@ -347,7 +351,7 @@ def process_simulation_iteration(task):
 # 3. MAIN EXECUTION BLOCK 
 # ====================================================================
 if __name__ == '__main__':
-    num_iterations = 1900 
+    num_iterations = 190000 
     plot_radius = 55
     hub_radius = 5
     cell_size = 0.05
@@ -649,3 +653,4 @@ if __name__ == '__main__':
     fig3.savefig(img_path3, format='svg', dpi=300, bbox_inches='tight')
     
     plt.show()
+    
