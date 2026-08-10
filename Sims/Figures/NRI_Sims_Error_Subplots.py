@@ -4,28 +4,18 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import concurrent.futures
 import multiprocessing
-from scipy.ndimage import distance_transform_edt, gaussian_filter, label
+from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 # ====================================================================
-# 1. HELPER FUNCTIONS
+# 1. HELPER FUNCTIONS & GLOBAL CACHE
 # ====================================================================
-def get_gap_lengths(transect_array, gap_val, p_size):
-    valid_transect = transect_array[transect_array != -9999]
-    if len(valid_transect) == 0:
-        return np.array([])
-    padded = np.concatenate(([False], (valid_transect == gap_val), [False]))
-    diffs = np.diff(padded.astype(np.int8))
-    starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
-    return (ends - starts) * p_size
+WORKER_CACHE = {}
 
-# ====================================================================
-# 2. ISOLATED WORKER FUNCTION
-# ====================================================================
-def process_simulation_iteration(task):
-    target_bg, plot_radius, hub_radius, cell_size = task
-    
-    np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
-
+def init_worker(plot_radius, hub_radius, cell_size):
+    """
+    Initializes static grids once per CPU core to prevent redundant 
+    memory allocation across the simulation iterations.
+    """
     x = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
     y = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
     grid_size = len(x)
@@ -51,12 +41,43 @@ def process_simulation_iteration(task):
         rows = np.clip(rows, 0, grid_size - 1)
         spoke_indices.append((rows, cols))
         
+    WORKER_CACHE['grid_size'] = grid_size
+    WORKER_CACHE['X'] = X
+    WORKER_CACHE['Y'] = Y
+    WORKER_CACHE['valid_mask'] = valid_mask
+    WORKER_CACHE['total_valid_pixels'] = total_valid_pixels
+    WORKER_CACHE['spoke_indices'] = spoke_indices
+    WORKER_CACHE['total_exhaust_length_m'] = total_valid_pixels * cell_size * 2
+
+def get_gap_lengths(transect_array, gap_val, p_size):
+    valid_transect = transect_array[transect_array != -9999]
+    if len(valid_transect) == 0:
+        return np.array([])
+    padded = np.concatenate(([False], (valid_transect == gap_val), [False]))
+    diffs = np.diff(padded.astype(np.int8))
+    starts, ends = np.where(diffs == 1)[0], np.where(diffs == -1)[0]
+    return (ends - starts) * p_size
+
+# ====================================================================
+# 2. ISOLATED WORKER FUNCTION
+# ====================================================================
+def process_simulation_iteration(task):
+    target_bg, plot_radius, hub_radius, cell_size = task
+    
+    np.random.seed(int.from_bytes(os.urandom(4), byteorder='little'))
+
+    # Load from pre-calculated cache
+    grid_size = WORKER_CACHE['grid_size']
+    X = WORKER_CACHE['X']
+    Y = WORKER_CACHE['Y']
+    valid_mask = WORKER_CACHE['valid_mask']
+    total_valid_pixels = WORKER_CACHE['total_valid_pixels']
+    spoke_indices = WORKER_CACHE['spoke_indices']
+    total_exhaust_length_m = WORKER_CACHE['total_exhaust_length_m']
+        
     large_shrub_value = 1
     small_shrub_value = 2
     target_value = 3
-    
-    total_exhaust_length_m = total_valid_pixels * cell_size * 2
-    total_nri_length_m = 3 * spoke_length_m
 
     # ==========================================
     # Z-INDEXED HYBRID LOGIC 
@@ -81,6 +102,11 @@ def process_simulation_iteration(task):
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
+    if target_bg <= 50:
+        prob_dark = np.interp(target_bg, [5, 50], [0.05, 0.45])
+    else:
+        prob_dark = np.interp(target_bg, [50, 100], [0.45, 1.0])
+
     # ==========================================
     # DECOUPLED SPATIAL PROCESSES
     # ==========================================
@@ -96,19 +122,26 @@ def process_simulation_iteration(task):
     shadow_dx = np.cos(shadow_angle)
     shadow_dy = np.sin(shadow_angle)
 
+    # 1. Large Shrubs: Dynamic Thomas Cluster
     if num_parents > 0:
         gen_radius = plot_radius + r_large_bnds[1] + cluster_spread
         r_parents = gen_radius * np.sqrt(np.random.uniform(0, 1, num_parents))
         theta_parents = np.random.uniform(0, 2 * np.pi, num_parents)
         px_arr = r_parents * np.cos(theta_parents)
         py_arr = r_parents * np.sin(theta_parents)
+        
+        is_woody_parent = np.random.rand(num_parents) <= prob_dark
 
         if num_large > 0:
+            # Vectorize RNG generation outside of the loop
             r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
-            for rad in r_large_arr:
-                parent_idx = np.random.randint(0, num_parents)
-                cx = np.random.normal(px_arr[parent_idx], cluster_spread)
-                cy = np.random.normal(py_arr[parent_idx], cluster_spread)
+            parent_indices = np.random.randint(0, num_parents, num_large)
+            cx_arr = np.random.normal(px_arr[parent_indices], cluster_spread)
+            cy_arr = np.random.normal(py_arr[parent_indices], cluster_spread)
+            
+            for i, rad in enumerate(r_large_arr):
+                cx = cx_arr[i]
+                cy = cy_arr[i]
                 
                 c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
                 c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
@@ -144,11 +177,12 @@ def process_simulation_iteration(task):
                 fringe_keep_mask = np.random.rand(*dx.shape) > porosity_chance
                 lobe_mask &= fringe_keep_mask
                 
-                large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
+                if is_woody_parent[parent_indices[i]]:
+                    large_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
+                else:
+                    small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
 
-    # ==========================================
-    # THOMAS CLUSTER IMPLEMENTATION FOR SMALL SHRUBS
-    # ==========================================
+    # 2. Small Shrubs: Thomas Cluster
     if num_small > 0:
         shrubs_per_cluster_small = int(np.interp(target_bg, [0, 100], [5, 20]))
         num_parents_small = max(1, num_small // shrubs_per_cluster_small)
@@ -161,11 +195,15 @@ def process_simulation_iteration(task):
             px_arr_s = r_parents_s * np.cos(theta_parents_s)
             py_arr_s = r_parents_s * np.sin(theta_parents_s)
 
+            # Vectorize RNG generation outside of the loop
             r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
-            for rad in r_small_arr:
-                parent_idx = np.random.randint(0, num_parents_small)
-                cx = np.random.normal(px_arr_s[parent_idx], cluster_spread_small)
-                cy = np.random.normal(py_arr_s[parent_idx], cluster_spread_small)
+            parent_indices_s = np.random.randint(0, num_parents_small, num_small)
+            cx_arr_s = np.random.normal(px_arr_s[parent_indices_s], cluster_spread_small)
+            cy_arr_s = np.random.normal(py_arr_s[parent_indices_s], cluster_spread_small)
+            
+            for i, rad in enumerate(r_small_arr):
+                cx = cx_arr_s[i]
+                cy = cy_arr_s[i]
                 
                 c_min = max(0, int((cx - rad * 1.5 + plot_radius) / cell_size))
                 c_max = min(grid_size, int((cx + rad * 1.5 + plot_radius) / cell_size) + 1)
@@ -194,26 +232,6 @@ def process_simulation_iteration(task):
                     lobe_mask |= (np.sqrt((dx - ox)**2 + (dy - oy)**2) <= lobe_rad * (1.0 + noise_lobe))
                 
                 small_mask[r_min:r_max, c_min:c_max] |= (core_mask | lobe_mask)
-
-    # ==========================================
-    # SEPARATE WOODY SHRUBS FROM HERBACEOUS COVER (VECTORIZED)
-    # ==========================================
-    if target_bg <= 50:
-        prob_dark = np.interp(target_bg, [5, 50], [0.05, 0.45])
-    else:
-        prob_dark = np.interp(target_bg, [50, 100], [0.45, 1.0])
-
-    labeled_large, num_large_features = label(large_mask)
-    
-    # Vectorized probability assignment to bypass the slow for-loop
-    keep_mask = np.random.rand(num_large_features + 1) <= prob_dark
-    keep_mask[0] = False  # Always drop the background (label 0)
-    
-    # Map the booleans directly back to the 2D grid in one fast step
-    true_shrub_mask = keep_mask[labeled_large]
-
-    small_mask |= (large_mask & ~true_shrub_mask)
-    large_mask = true_shrub_mask
 
     # ==========================================
     # ASSEMBLE GRID & FRACTAL NOISE PUNCHING
@@ -364,11 +382,15 @@ if __name__ == '__main__':
         for _ in range(iters_per_bin):
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
+    # SHUFFLE TASKS: Distributes slow (low BG) and fast (high BG) iterations 
+    # equally across cores to ensure greedy, perfectly balanced multiprocessing.
+    np.random.shuffle(tasks)
+            
     total_tasks = len(tasks)
     cores = max(1, multiprocessing.cpu_count() - 3)
     
     print(f"{'='*50}")
-    print(f"Starting Multiprocessing Simulation")
+    print(f"Starting Optimized Multiprocessing Simulation")
     print(f"Target Bins: {len(target_bgs)}")
     print(f"Iterations per Bin: {iters_per_bin}")
     print(f"Total Iterations: {total_tasks}")
@@ -377,7 +399,10 @@ if __name__ == '__main__':
 
     results = []
     
-    with concurrent.futures.ProcessPoolExecutor(max_workers=cores) as executor:
+    # Passing the initializer functions handles memory caching perfectly per core
+    with concurrent.futures.ProcessPoolExecutor(max_workers=cores, 
+                                                initializer=init_worker, 
+                                                initargs=(plot_radius, hub_radius, cell_size)) as executor:
         for count, result in enumerate(executor.map(process_simulation_iteration, tasks), 1):
             results.append(result)
             if count % 100 == 0 or count == total_tasks:
@@ -653,4 +678,3 @@ if __name__ == '__main__':
     fig3.savefig(img_path3, format='svg', dpi=300, bbox_inches='tight')
     
     plt.show()
-    
