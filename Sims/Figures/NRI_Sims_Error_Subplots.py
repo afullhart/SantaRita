@@ -86,7 +86,13 @@ def process_simulation_iteration(task):
     organic_bg_pct = target_bg * organic_weight
     
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
-    lambda_target = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
+    base_lambda = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
+    
+    # Targeted boost exclusively for low BGR to overcome cluster overlap
+    if target_bg <= 10:
+        lambda_target = np.interp(target_bg, [0, 10], [6.5, base_lambda])
+    else:
+        lambda_target = base_lambda
     
     alpha_large = 0.75
     lambda_large = lambda_target * alpha_large
