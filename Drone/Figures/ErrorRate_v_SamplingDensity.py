@@ -27,14 +27,17 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
   color_rel = 'tab:blue'
   color_fit_main = 'black'
   
+  # Revert axis font to black if there is no secondary axis
+  axis_font_color = color_mae if plot_secondary else 'black'
+  
   ax.set_title(title, fontsize=18, fontweight='bold')
   ax.set_xlabel(x_label, fontsize=16)
   
   # Left Axis: Absolute Error
-  ax.set_ylabel(y_label, color=color_mae, fontsize=16)
+  ax.set_ylabel(y_label, color=axis_font_color, fontsize=16)
   
   l1 = ax.plot(x_vals, mae_errs, marker='s', linestyle='-', color=color_mae, alpha=0.4, label=mae_label)
-  ax.tick_params(axis='y', labelcolor=color_mae, labelsize=14)
+  ax.tick_params(axis='y', labelcolor=axis_font_color, labelsize=14)
   ax.tick_params(axis='x', labelsize=14)
   
   return_data = {'eq_text': "Fit Failed", 'params': None}
