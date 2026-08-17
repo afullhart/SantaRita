@@ -16,16 +16,16 @@ in_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
 in_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
 
 # --- OUTPUT FEATURE CLASSES ---
-out_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m_Random')
-out_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m_Random')
-out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_Random')
+out_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m_RandomLines')
+out_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m_RandomLines')
+out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_RandomLines')
 
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
 # --- SAMPLING DESIGN INCREMENTS ---
-PT_INCS = [1, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 10000]
-LN_INCS = [2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
+PT_INCS = [3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 5000, 10000]
+LN_INCS = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 1500, 3000]
 
 # ====================================================================
 # WORKER FUNCTION (Runs on multiple cores)
@@ -357,9 +357,9 @@ if __name__ == '__main__':
     print('\n--- Exporting Tables to CSV ---')
 
     export_tasks = {
-        out_grid_10m: 'SRER_Grid_10m_Random.csv',
-        out_grid_30m: 'SRER_Grid_30m_Random.csv',
-        out_nri_plots: 'SRER_NRI_Plots_110m_Random.csv'
+        out_grid_10m: 'SRER_Grid_10m_RandomLines.csv',
+        out_grid_30m: 'SRER_Grid_30m_RandomLines.csv',
+        out_nri_plots: 'SRER_NRI_Plots_110m_RandomLines.csv'
     }
 
     for fc_path, csv_name in export_tasks.items():
