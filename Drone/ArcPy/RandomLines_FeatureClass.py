@@ -114,7 +114,7 @@ def process_grid_cell(data_packet):
             f_0_24   = (np.sum(all_gap_lengths[(all_gap_lengths < 0.25)]) / total_transect_length_m) * 100
             f_25_50  = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.25) & (all_gap_lengths <= 0.50)]) / total_transect_length_m) * 100
             f_51_100 = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.51) & (all_gap_lengths <= 1.00)]) / total_transect_length_m) * 100
-            f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]) / total_transect_length_m) * 100
+            f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gaps_lengths <= 2.00)]) / total_transect_length_m) * 100
             f_gt_200 = (np.sum(all_gap_lengths[(all_gap_lengths > 2.00)]) / total_transect_length_m) * 100
         else:
             f_0_24 = f_25_50 = f_51_100 = f_101_200 = f_gt_200 = 0.0
@@ -126,63 +126,55 @@ def process_grid_cell(data_packet):
         ]
 
         # ==========================================
-        # 2. MASTER VIRTUAL TRANSECT GENERATION
+        # 2. INDEPENDENT TRANSECT HELPER FUNCTION
         # ==========================================
         valid_y, valid_x = np.where(mask)
         num_valid_starts = len(valid_y)
-
-        chunks_main = []
-        chunks_dist = []
         
-        # Calculate exactly how many pixels equal 1 meter
         step = int(round(1.0 / c_size))
         if step < 1: 
             step = 1
-            
-        max_L_meters = max(max(PT_INCS), max(LN_INCS))
-        max_target_px = max_L_meters * step
-        collected_px = 0
 
-        # Build chunks until the max target length is reached
-        while collected_px < max_target_px and num_valid_starts > 0:
-            r_idx = np.random.randint(0, num_valid_starts)
-            sy, sx = valid_y[r_idx], valid_x[r_idx]
-            direction = np.random.randint(0, 4)
-            rem_px = max_target_px - collected_px
+        def get_independent_transect(target_px):
+            """Generates an independent, randomized virtual transect of target_px length."""
+            collected_px = 0
+            chunks_main = []
+            chunks_dist = []
             
-            if direction == 0: 
-                c_main = main_array[sy, sx : min(sx + rem_px, ncols)]
-                c_dist = dist_array[sy, sx : min(sx + rem_px, ncols)]
-                c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
-            elif direction == 1: 
-                c_main = main_array[sy : min(sy + rem_px, nrows), sx]
-                c_dist = dist_array[sy : min(sy + rem_px, nrows), sx]
-                c_mask = mask[sy : min(sy + rem_px, nrows), sx]
-            elif direction == 2: 
-                c_main = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                c_dist = dist_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                c_mask = mask[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-            else: 
-                c_main = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                c_dist = dist_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+            while collected_px < target_px and num_valid_starts > 0:
+                r_idx = np.random.randint(0, num_valid_starts)
+                sy, sx = valid_y[r_idx], valid_x[r_idx]
+                direction = np.random.randint(0, 4)
+                rem_px = target_px - collected_px
                 
-            invalid_idx = np.where(~c_mask)[0]
-            if len(invalid_idx) > 0:
-                c_main = c_main[:invalid_idx[0]]
-                c_dist = c_dist[:invalid_idx[0]]
-                
-            if len(c_main) > 0:
-                chunks_main.append(c_main)
-                chunks_dist.append(c_dist)
-                collected_px += len(c_main)
-
-        if collected_px > 0:
-            master_main = np.concatenate(chunks_main)
-            master_dist = np.concatenate(chunks_dist)
-        else:
-            master_main = np.array([])
-            master_dist = np.array([])
+                if direction == 0: 
+                    c_main = main_array[sy, sx : min(sx + rem_px, ncols)]
+                    c_dist = dist_array[sy, sx : min(sx + rem_px, ncols)]
+                    c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
+                elif direction == 1: 
+                    c_main = main_array[sy : min(sy + rem_px, nrows), sx]
+                    c_dist = dist_array[sy : min(sy + rem_px, nrows), sx]
+                    c_mask = mask[sy : min(sy + rem_px, nrows), sx]
+                elif direction == 2: 
+                    c_main = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
+                    c_dist = dist_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
+                    c_mask = mask[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
+                else: 
+                    c_main = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                    c_dist = dist_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                    c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                    
+                invalid_idx = np.where(~c_mask)[0]
+                if len(invalid_idx) > 0:
+                    c_main = c_main[:invalid_idx[0]]
+                    c_dist = c_dist[:invalid_idx[0]]
+                    
+                if len(c_main) > 0:
+                    chunks_main.append(c_main)
+                    chunks_dist.append(c_dist)
+                    collected_px += len(c_main)
+                    
+            return chunks_main, chunks_dist
 
         # ==========================================
         # 3. LINE-BASED 1-METER POINT SAMPLING
@@ -190,17 +182,19 @@ def process_grid_cell(data_packet):
         for n_pts in PT_INCS:
             req_px = n_pts * step
             
-            if req_px == 0 or len(master_main) == 0:
+            chunks_main, chunks_dist = get_independent_transect(req_px)
+            
+            if req_px == 0 or len(chunks_main) == 0:
                 output_metrics.extend([0.0, 0.0, None, 0.0, 0.0])
                 continue
                 
-            slice_main = master_main[:req_px]
-            slice_dist = master_dist[:req_px]
+            full_main = np.concatenate(chunks_main)
+            full_dist = np.concatenate(chunks_dist)
             
-            # Step through the line array at exactly 1m intervals
-            idx = np.arange(0, req_px, step)
-            sampled_main = slice_main[idx]
-            sampled_dist = slice_dist[idx]
+            # Step through the independent line array at exactly 1m intervals
+            idx = np.arange(0, len(full_main), step)
+            sampled_main = full_main[idx]
+            sampled_dist = full_dist[idx]
             
             actual_pts = len(sampled_main)
             if actual_pts == 0:
@@ -225,26 +219,21 @@ def process_grid_cell(data_packet):
         for L_meters in LN_INCS:
             req_px = int(round(L_meters / c_size))
             
-            all_gaps = []
-            accumulated = 0
+            chunks_main, _ = get_independent_transect(req_px)
             
+            all_gaps = []
+            actual_L = 0
+            
+            # Loop over chunks, padding each individually to strictly prevent bridging
             for chunk in chunks_main:
-                if accumulated >= req_px:
-                    break
-                    
-                take_px = min(len(chunk), req_px - accumulated)
-                c_slice = chunk[:take_px]
-                
-                is_gap = (c_slice == target_value)
+                is_gap = (chunk == target_value)
                 padded = np.concatenate(([False], is_gap, [False]))
                 diffs = np.diff(padded.astype(int))
                 starts = np.where(diffs == 1)[0]
                 ends = np.where(diffs == -1)[0]
                 all_gaps.extend((ends - starts) * c_size)
+                actual_L += len(chunk) * c_size
                 
-                accumulated += take_px
-                
-            actual_L = accumulated * c_size
             all_gaps = np.array(all_gaps)
             
             if actual_L > 0:
@@ -267,7 +256,7 @@ def process_grid_cell(data_packet):
 # ====================================================================
 def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
     fc_name = os.path.basename(out_fc)
-    print(f'\n--- Processing Seasonal Metrics & Line Undersampling for {fc_name} ---')
+    print(f'\n--- Processing Seasonal Metrics & Independent Line Undersampling for {fc_name} ---')
 
     shapes_dict = {}
     tasks = []
@@ -351,7 +340,7 @@ if __name__ == '__main__':
     calculate_metrics_for_fc(in_grid_30m, out_grid_30m, pixel_size, is_circle=False)
     calculate_metrics_for_fc(in_nri_plots, out_nri_plots, pixel_size, is_circle=True)
 
-    print('\nAll Extracted Metrics & Line Processing Complete!')
+    print('\nAll Extracted Metrics & Independent Line Processing Complete!')
 
     csv_out_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
     print('\n--- Exporting Tables to CSV ---')
@@ -376,3 +365,4 @@ if __name__ == '__main__':
         )
 
     print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
+    
