@@ -49,6 +49,12 @@ def main():
     params_herb = get_random_fit(df_rand, 'Herb_Pct_Exact', 'Herb_Pct_pt_', pts)
     params_woody = get_random_fit(df_rand, 'Woody_Pct_Exact', 'Woody_Pct_pt_', pts)
     
+    # Print the derived equations to the console for confirmation
+    print("\n--- DERIVED POWER LAW EQUATIONS (110m NRI Base) ---")
+    print(f"BGR:   y = {params_bgr[0]:.2f}x^-{params_bgr[1]:.2f} + {params_bgr[2]:.2f}")
+    print(f"Herb:  y = {params_herb[0]:.2f}x^-{params_herb[1]:.2f} + {params_herb[2]:.2f}")
+    print(f"Woody: y = {params_woody[0]:.2f}x^-{params_woody[1]:.2f} + {params_woody[2]:.2f}")
+    
     # Define the line-intercept spacings and their equivalent random point count (N)
     # Based on a 150m total transect length per 110m plot (150m / spacing)
     intervals = {
