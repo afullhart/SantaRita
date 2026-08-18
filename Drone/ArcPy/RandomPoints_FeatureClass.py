@@ -15,7 +15,7 @@ in_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m')
 in_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
 in_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
 
-# --- OUTPUT FEATURE CLASSES ---
+# --- OUTPUT FEATURE CLASSES (Random Point Base) ---
 out_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m_Random')
 out_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m_Random')
 out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_Random')
@@ -23,9 +23,9 @@ out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_Random')
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
-# --- SAMPLING DESIGN INCREMENTS ---
-PT_INCS = [1, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 10000]
-LN_INCS = [2, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 3000]
+# --- SAMPLING DESIGN INCREMENTS (Updated to match) ---
+PT_INCS = [3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 5000, 10000]
+LN_INCS = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 1500, 3000]
 
 # ====================================================================
 # WORKER FUNCTION (Runs on multiple cores)
@@ -44,9 +44,7 @@ def process_grid_cell(data_packet):
         
         main_array = arcpy.RasterToNumPyArray(tiff_path, lower_left, ncols, nrows)
         
-        # ==========================================
-        # NEW: Convert shadow (4) to herb cover (1)
-        # ==========================================
+        # Convert shadow (4) to herb cover (1)
         main_array[main_array == 4] = herb_value
         
         # --- CIRCULAR MASKING LOGIC ---
@@ -84,7 +82,6 @@ def process_grid_cell(data_packet):
         dist_array = distance_transform_edt(is_bare) * c_size
         mean_fetch_exact = np.mean(dist_array[mask]) if is_circle else np.mean(dist_array)
 
-        # --- HERB-TO-WOODY EXACT RATIO & COVER PCT ---
         if is_circle:
             herb_px = np.sum((main_array == herb_value) & mask)
             woody_px = np.sum((main_array == woody_value) & mask)
@@ -129,7 +126,7 @@ def process_grid_cell(data_packet):
         ]
 
         # ==========================================
-        # 2. RANDOM POINT UNDERSAMPLING 
+        # 2. PURE RANDOM POINT UNDERSAMPLING 
         # ==========================================
         valid_bare = is_bare[mask]
         valid_fetch = dist_array[mask]
@@ -148,6 +145,7 @@ def process_grid_cell(data_packet):
                 output_metrics.extend([0.0, 0.0, None, 0.0, 0.0])
                 continue
             
+            # Independent 1D sampling
             idx = np.random.choice(num_valid_pts, size=n_pts, replace=True)
             
             smpl_bgr = (np.sum(valid_bare[idx]) / n_pts) * 100
@@ -163,15 +161,15 @@ def process_grid_cell(data_packet):
             output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio, smpl_herb_pct, smpl_woody_pct])
 
         # ==========================================
-        # 3. VIRTUAL TRANSECT UNDERSAMPLING (GAP)
+        # 3. INDEPENDENT TRANSECT HELPER FUNCTION (For CGF)
         # ==========================================
         valid_y, valid_x = np.where(mask)
         num_valid_starts = len(valid_y)
 
-        for L_meters in LN_INCS:
-            target_px = int(round(L_meters / c_size))
+        def get_independent_transect(target_px):
+            """Generates an independent, randomized virtual transect of target_px length."""
             collected_px = 0
-            chunks = []
+            chunks_main = []
             
             while collected_px < target_px and num_valid_starts > 0:
                 r_idx = np.random.randint(0, num_valid_starts)
@@ -180,43 +178,57 @@ def process_grid_cell(data_packet):
                 rem_px = target_px - collected_px
                 
                 if direction == 0: 
-                    chunk = main_array[sy, sx : min(sx + rem_px, ncols)]
+                    c_main = main_array[sy, sx : min(sx + rem_px, ncols)]
                     c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
                 elif direction == 1: 
-                    chunk = main_array[sy : min(sy + rem_px, nrows), sx]
+                    c_main = main_array[sy : min(sy + rem_px, nrows), sx]
                     c_mask = mask[sy : min(sy + rem_px, nrows), sx]
                 elif direction == 2: 
-                    chunk = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
+                    c_main = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
                     c_mask = mask[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
                 else: 
-                    chunk = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                    c_main = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
                     c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                
+                    
                 invalid_idx = np.where(~c_mask)[0]
                 if len(invalid_idx) > 0:
-                    chunk = chunk[:invalid_idx[0]]
+                    c_main = c_main[:invalid_idx[0]]
                     
-                if len(chunk) > 0:
-                    chunks.append(chunk == target_value)
-                    chunks.append(np.array([False])) 
-                    collected_px += len(chunk)
+                if len(c_main) > 0:
+                    chunks_main.append(c_main)
+                    collected_px += len(c_main)
+                    
+            return chunks_main
 
-            if len(chunks) > 0:
-                full_transect = np.concatenate(chunks)
-                actual_L = collected_px * c_size
+        # ==========================================
+        # 4. CONTINUOUS LINE-INTERCEPT (CGF)
+        # ==========================================
+        for L_meters in LN_INCS:
+            req_px = int(round(L_meters / c_size))
+            
+            chunks_main = get_independent_transect(req_px)
+            
+            all_gaps = []
+            actual_L = 0
+            
+            # Loop over chunks, padding each individually to strictly prevent bridging
+            for chunk in chunks_main:
+                is_gap = (chunk == target_value)
+                padded = np.concatenate(([False], is_gap, [False]))
+                diffs = np.diff(padded.astype(int))
+                starts = np.where(diffs == 1)[0]
+                ends = np.where(diffs == -1)[0]
+                all_gaps.extend((ends - starts) * c_size)
+                actual_L += len(chunk) * c_size
                 
-                padded_t = np.concatenate(([False], full_transect, [False]))
-                diffs_t = np.diff(padded_t.astype(int))
-                starts_t = np.where(diffs_t == 1)[0]
-                ends_t = np.where(diffs_t == -1)[0]
-                gaps_t = (ends_t - starts_t) * c_size
-                
-                s_0_24   = (np.sum(gaps_t[(gaps_t < 0.25)]) / actual_L) * 100 if actual_L > 0 else 0
-                s_25_50  = (np.sum(gaps_t[(gaps_t >= 0.25) & (gaps_t <= 0.50)]) / actual_L) * 100 if actual_L > 0 else 0
-                s_51_100 = (np.sum(gaps_t[(gaps_t >= 0.51) & (gaps_t <= 1.00)]) / actual_L) * 100 if actual_L > 0 else 0
-                s_101_200= (np.sum(gaps_t[(gaps_t >= 1.01) & (gaps_t <= 2.00)]) / actual_L) * 100 if actual_L > 0 else 0
-                s_gt_200 = (np.sum(gaps_t[(gaps_t > 2.00)]) / actual_L) * 100 if actual_L > 0 else 0
-                
+            all_gaps = np.array(all_gaps)
+            
+            if actual_L > 0:
+                s_0_24   = (np.sum(all_gaps[(all_gaps < 0.25)]) / actual_L) * 100
+                s_25_50  = (np.sum(all_gaps[(all_gaps >= 0.25) & (all_gaps <= 0.50)]) / actual_L) * 100
+                s_51_100 = (np.sum(all_gaps[(all_gaps >= 0.51) & (all_gaps <= 1.00)]) / actual_L) * 100
+                s_101_200= (np.sum(all_gaps[(all_gaps >= 1.01) & (all_gaps <= 2.00)]) / actual_L) * 100
+                s_gt_200 = (np.sum(all_gaps[(all_gaps > 2.00)]) / actual_L) * 100
                 output_metrics.extend([s_0_24, s_25_50, s_51_100, s_101_200, s_gt_200])
             else:
                 output_metrics.extend([0.0, 0.0, 0.0, 0.0, 0.0])
@@ -231,12 +243,11 @@ def process_grid_cell(data_packet):
 # ====================================================================
 def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
     fc_name = os.path.basename(out_fc)
-    print(f'\n--- Processing 2X Seasonal Metrics & Undersampling for {fc_name} ---')
+    print(f'\n--- Processing Seasonal Metrics & Random Undersampling for {fc_name} ---')
 
     shapes_dict = {}
     tasks = []
     
-    # Note: Reading geometries from in_fc
     with arcpy.da.SearchCursor(in_fc, ['OID@', 'SHAPE@']) as cursor:
         for oid, geom in cursor:
             shapes_dict[oid] = geom
@@ -263,9 +274,8 @@ def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
             if count % 1000 == 0:
                 print(f'  -> Processed {count} / {total_tasks} tasks...')
 
-    print('  -> Constructing final feature class with all random fields...')
+    print('  -> Constructing final feature class with all random point fields...')
     
-    # Pull spatial reference from input
     sr = arcpy.Describe(in_fc).spatialReference
     temp_out = r'memory\temp_metrics_fc'
     
@@ -276,17 +286,14 @@ def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
     
     arcpy.management.AddField(temp_out, 'Season', 'TEXT')
     
-    # 1. Exact Fields
     new_fields = [
         'BGR_Exact', 'LPI_Exact', 'Fetch_Exact', 'HW_Ratio_Exact', 'Herb_Pct_Exact', 'Woody_Pct_Exact',
         'Gap_0_24_Exact', 'Gap_25_50_Exact', 'Gap_51_100_Exact', 'Gap_101_200_Exact', 'Gap_gt_200_Exact'
     ]
     
-    # 2. Point Increment Fields
     for pt in PT_INCS:
         new_fields.extend([f'BGR_pt_{pt}', f'Fetch_pt_{pt}', f'HW_Ratio_pt_{pt}', f'Herb_Pct_pt_{pt}', f'Woody_Pct_pt_{pt}'])
         
-    # 3. Line Increment Fields
     for ln in LN_INCS:
         new_fields.extend([
             f'Gap_0_24_L_{ln}', f'Gap_25_50_L_{ln}', f'Gap_51_100_L_{ln}', 
@@ -303,7 +310,6 @@ def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
             row_data = [geom, season] + metrics
             icursor.insertRow(row_data)
 
-    # Copy features to the NEW specified output location
     arcpy.management.CopyFeatures(temp_out, out_fc)
     arcpy.management.Delete(temp_out)
     
@@ -321,10 +327,9 @@ if __name__ == '__main__':
     calculate_metrics_for_fc(in_grid_30m, out_grid_30m, pixel_size, is_circle=False)
     calculate_metrics_for_fc(in_nri_plots, out_nri_plots, pixel_size, is_circle=True)
 
-    print('\nAll Extracted Metrics & Random Processing Complete!')
+    print('\nAll Extracted Metrics & Random Point Processing Complete!')
 
     csv_out_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
-
     print('\n--- Exporting Tables to CSV ---')
 
     export_tasks = {
@@ -347,4 +352,3 @@ if __name__ == '__main__':
         )
 
     print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
-  
