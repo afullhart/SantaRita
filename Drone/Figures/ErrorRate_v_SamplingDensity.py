@@ -267,7 +267,6 @@ def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, l
         c = colors[i]
         ls = styles[i]
         
-        # Override the long legend text with a short string exclusively for the text box
         short_label = 'Points' if i == 0 else 'Lines'
         
         ax.plot(x_vals, mae_errs, marker='s', linestyle='', color=c, alpha=0.3)
@@ -634,7 +633,7 @@ if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
             
         fetch_mae_rl.append(np.abs(df_rl[f'Fetch_pt_{pt}'] - df_rl['Fetch_Exact']).mean())
 
-    fig_comp, axes_comp = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
+    fig_comp, axes_comp = plt.subplots(nrows=2, ncols=2, figsize=(14, 10))
     master_lines_comp, master_labels_comp = [], []
 
     # Top Left: BGR
@@ -673,13 +672,13 @@ if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
             
     # Add a unified legend to the bottom of the figure
     fig_comp.legend(handles_dict.values(), handles_dict.keys(), 
-                    loc='lower center', ncol=2, fontsize=16, frameon=True, borderpad=1.0, 
+                    loc='lower center', ncol=2, fontsize=14, frameon=True, borderpad=1.0, 
                     bbox_to_anchor=(0.5, 0.02))
     
-    fig_comp.suptitle('Convergence Comparison: Pure Random Points vs. 1m Interval Random Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    fig_comp.suptitle('Convergence Comparison: Points vs. Random Lines (110m NRI Base)', fontsize=20, fontweight='bold', y=0.96)
     
-    # Compress the plots slightly to leave space for the title and the bottom legend
-    fig_comp.tight_layout(rect=[0, 0.08, 1, 0.95], pad=3.0)  
+    # Adjust layout to prevent title clipping and padding issues
+    fig_comp.tight_layout(rect=[0, 0.08, 1, 0.93], pad=2.5)  
 
     comp_img_path = os.path.join(out_folder, '110m_NRI_RandomLine_Comparison.svg')
     plt.savefig(comp_img_path, format='svg', dpi=300)
