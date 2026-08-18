@@ -15,7 +15,7 @@ in_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m')
 in_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m')
 in_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m')
 
-# --- OUTPUT FEATURE CLASSES ---
+# --- OUTPUT FEATURE CLASSES (Random Lines Base) ---
 out_nri_plots = os.path.join(out_gdb, 'SRER_NRI_Plots_110m_RandomLines')
 out_grid_10m = os.path.join(out_gdb, 'SRER_Grid_10m_RandomLines')
 out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_RandomLines')
@@ -114,7 +114,6 @@ def process_grid_cell(data_packet):
             f_0_24   = (np.sum(all_gap_lengths[(all_gap_lengths < 0.25)]) / total_transect_length_m) * 100
             f_25_50  = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.25) & (all_gap_lengths <= 0.50)]) / total_transect_length_m) * 100
             f_51_100 = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.51) & (all_gap_lengths <= 1.00)]) / total_transect_length_m) * 100
-            # TYPO FIXED ON THE LINE BELOW: all_gap_lengths <= 2.00
             f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]) / total_transect_length_m) * 100
             f_gt_200 = (np.sum(all_gap_lengths[(all_gap_lengths > 2.00)]) / total_transect_length_m) * 100
         else:
@@ -126,106 +125,107 @@ def process_grid_cell(data_packet):
             f_0_24, f_25_50, f_51_100, f_101_200, f_gt_200
         ]
 
-        # ==========================================
-        # 2. INDEPENDENT TRANSECT HELPER FUNCTION
-        # ==========================================
+        # Shared setup for geometric helpers
         valid_y, valid_x = np.where(mask)
         num_valid_starts = len(valid_y)
-        
-        step = int(round(1.0 / c_size))
-        if step < 1: 
-            step = 1
 
-        def get_independent_transect(target_px):
-            """Generates an independent, randomized virtual transect of target_px length."""
-            collected_px = 0
-            chunks_main = []
-            chunks_dist = []
+        # ==========================================
+        # 2. 1M INTERVAL RANDOM LINE SAMPLING (0-360 Radials)
+        # ==========================================
+        def get_radial_point_samples(target_m, interval_m=1.0):
+            """Generates a true 0-360 degree radial line and extracts points at fixed intervals."""
+            target_pts = int(round(target_m / interval_m))
+            collected_pts, collected_fetch = [], []
+            collected_herb, collected_woody = [], []
             
-            while collected_px < target_px and num_valid_starts > 0:
+            pts_gathered = 0
+            while pts_gathered < target_pts and num_valid_starts > 0:
                 r_idx = np.random.randint(0, num_valid_starts)
-                sy, sx = valid_y[r_idx], valid_x[r_idx]
-                direction = np.random.randint(0, 4)
-                rem_px = target_px - collected_px
+                cy, cx = valid_y[r_idx], valid_x[r_idx]
+                angle = np.random.uniform(0, 2 * np.pi)
                 
-                if direction == 0: 
-                    c_main = main_array[sy, sx : min(sx + rem_px, ncols)]
-                    c_dist = dist_array[sy, sx : min(sx + rem_px, ncols)]
-                    c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
-                elif direction == 1: 
-                    c_main = main_array[sy : min(sy + rem_px, nrows), sx]
-                    c_dist = dist_array[sy : min(sy + rem_px, nrows), sx]
-                    c_mask = mask[sy : min(sy + rem_px, nrows), sx]
-                elif direction == 2: 
-                    c_main = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                    c_dist = dist_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                    c_mask = mask[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                else: 
-                    c_main = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                    c_dist = dist_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                    c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                step_px = interval_m / c_size
+                curr_step = 0
+                
+                while pts_gathered < target_pts:
+                    py = int(round(cy + (curr_step * step_px) * np.sin(angle)))
+                    px = int(round(cx + (curr_step * step_px) * np.cos(angle)))
                     
-                invalid_idx = np.where(~c_mask)[0]
-                if len(invalid_idx) > 0:
-                    c_main = c_main[:invalid_idx[0]]
-                    c_dist = c_dist[:invalid_idx[0]]
+                    if py < 0 or py >= nrows or px < 0 or px >= ncols or not mask[py, px]:
+                        break 
+                        
+                    collected_pts.append(is_bare[py, px])
+                    collected_fetch.append(dist_array[py, px])
+                    collected_herb.append(main_array[py, px] == herb_value)
+                    collected_woody.append(main_array[py, px] == woody_value)
                     
-                if len(c_main) > 0:
-                    chunks_main.append(c_main)
-                    chunks_dist.append(c_dist)
-                    collected_px += len(c_main)
+                    pts_gathered += 1
+                    curr_step += 1
                     
-            return chunks_main, chunks_dist
+            return np.array(collected_pts), np.array(collected_fetch), np.array(collected_herb), np.array(collected_woody)
 
-        # ==========================================
-        # 3. LINE-BASED 1-METER POINT SAMPLING
-        # ==========================================
         for n_pts in PT_INCS:
-            req_px = n_pts * step
-            
-            chunks_main, chunks_dist = get_independent_transect(req_px)
-            
-            if req_px == 0 or len(chunks_main) == 0:
+            if num_valid_starts == 0:
                 output_metrics.extend([0.0, 0.0, None, 0.0, 0.0])
                 continue
+            
+            pts_bare, pts_fetch, pts_herb, pts_woody = get_radial_point_samples(target_m=float(n_pts), interval_m=1.0)
+            
+            if len(pts_bare) > 0:
+                smpl_bgr = (np.sum(pts_bare) / len(pts_bare)) * 100
+                smpl_fetch = np.mean(pts_fetch)
+                smpl_herb_count = np.sum(pts_herb)
+                smpl_woody_count = np.sum(pts_woody)
                 
-            full_main = np.concatenate(chunks_main)
-            full_dist = np.concatenate(chunks_dist)
-            
-            # Step through the independent line array at exactly 1m intervals
-            idx = np.arange(0, len(full_main), step)
-            sampled_main = full_main[idx]
-            sampled_dist = full_dist[idx]
-            
-            actual_pts = len(sampled_main)
-            if actual_pts == 0:
-                output_metrics.extend([0.0, 0.0, None, 0.0, 0.0])
-                continue
+                smpl_hw_ratio = (float(smpl_herb_count) / float(smpl_woody_count)) if smpl_woody_count > 0 else None
+                smpl_herb_pct = (float(smpl_herb_count) / len(pts_bare)) * 100
+                smpl_woody_pct = (float(smpl_woody_count) / len(pts_bare)) * 100
+            else:
+                smpl_bgr = smpl_fetch = smpl_herb_pct = smpl_woody_pct = 0.0
+                smpl_hw_ratio = None
                 
-            smpl_bgr = (np.sum(sampled_main == target_value) / actual_pts) * 100
-            smpl_fetch = np.mean(sampled_dist)
-            
-            smpl_herb_count = np.sum(sampled_main == herb_value)
-            smpl_woody_count = np.sum(sampled_main == woody_value)
-            
-            smpl_hw_ratio = (float(smpl_herb_count) / float(smpl_woody_count)) if smpl_woody_count > 0 else None
-            smpl_herb_pct = (float(smpl_herb_count) / actual_pts) * 100
-            smpl_woody_pct = (float(smpl_woody_count) / actual_pts) * 100
-            
             output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio, smpl_herb_pct, smpl_woody_pct])
 
         # ==========================================
-        # 4. CONTINUOUS LINE-INTERCEPT (CGF)
+        # 3. CONTINUOUS LINE-INTERCEPT (0-360 Radial CGF)
         # ==========================================
+        def get_radial_continuous_samples(target_px):
+            """Generates continuous pixel chunks along true 0-360 degree radial vectors."""
+            collected_px = 0
+            chunks_main = []
+            
+            while collected_px < target_px and num_valid_starts > 0:
+                r_idx = np.random.randint(0, num_valid_starts)
+                cy, cx = valid_y[r_idx], valid_x[r_idx]
+                angle = np.random.uniform(0, 2 * np.pi)
+                
+                curr_step = 0
+                rem_px = target_px - collected_px
+                chunk = []
+                
+                while curr_step < rem_px:
+                    py = int(round(cy + curr_step * np.sin(angle)))
+                    px = int(round(cx + curr_step * np.cos(angle)))
+                    
+                    if py < 0 or py >= nrows or px < 0 or px >= ncols or not mask[py, px]:
+                        break
+                        
+                    chunk.append(main_array[py, px])
+                    curr_step += 1
+                    
+                if chunk:
+                    chunks_main.append(np.array(chunk))
+                    collected_px += len(chunk)
+                    
+            return chunks_main
+
         for L_meters in LN_INCS:
             req_px = int(round(L_meters / c_size))
-            
-            chunks_main, _ = get_independent_transect(req_px)
+            chunks_main = get_radial_continuous_samples(req_px)
             
             all_gaps = []
             actual_L = 0
             
-            # Loop over chunks, padding each individually to strictly prevent bridging
             for chunk in chunks_main:
                 is_gap = (chunk == target_value)
                 padded = np.concatenate(([False], is_gap, [False]))
@@ -257,7 +257,7 @@ def process_grid_cell(data_packet):
 # ====================================================================
 def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
     fc_name = os.path.basename(out_fc)
-    print(f'\n--- Processing Seasonal Metrics & Independent Line Undersampling for {fc_name} ---')
+    print(f'\n--- Processing Seasonal Metrics & Random Line Intercepts for {fc_name} ---')
 
     shapes_dict = {}
     tasks = []
@@ -288,7 +288,7 @@ def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
             if count % 1000 == 0:
                 print(f'  -> Processed {count} / {total_tasks} tasks...')
 
-    print('  -> Constructing final feature class with all line-sampled fields...')
+    print('  -> Constructing final feature class with all random line fields...')
     
     sr = arcpy.Describe(in_fc).spatialReference
     temp_out = r'memory\temp_metrics_fc'
@@ -341,7 +341,7 @@ if __name__ == '__main__':
     calculate_metrics_for_fc(in_grid_30m, out_grid_30m, pixel_size, is_circle=False)
     calculate_metrics_for_fc(in_nri_plots, out_nri_plots, pixel_size, is_circle=True)
 
-    print('\nAll Extracted Metrics & Independent Line Processing Complete!')
+    print('\nAll Extracted Metrics & Random Line Processing Complete!')
 
     csv_out_folder = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data'
     print('\n--- Exporting Tables to CSV ---')
@@ -365,4 +365,4 @@ if __name__ == '__main__':
             out_table=out_csv_path
         )
 
-    print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
+    print(f'\nSuccess! All Random Line metrics exported to: {csv_out_folder}')
