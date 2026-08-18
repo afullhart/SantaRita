@@ -23,7 +23,7 @@ out_grid_30m = os.path.join(out_gdb, 'SRER_Grid_30m_Random')
 may_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_May_2019_UTM12N_Mosaic.tif'
 sep_tiff = r'C:\Users\andre\Documents\ArcGIS\Projects\MyProject1\Data\SRER_Classified_Sep_2019_UTM12N_Mosaic.tif'
 
-# --- SAMPLING DESIGN INCREMENTS (Updated to match) ---
+# --- SAMPLING DESIGN INCREMENTS ---
 PT_INCS = [3, 5, 7, 10, 15, 20, 30, 50, 70, 100, 200, 300, 500, 700, 1000, 5000, 10000]
 LN_INCS = [3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 300, 1500, 3000]
 
@@ -161,52 +161,48 @@ def process_grid_cell(data_packet):
             output_metrics.extend([smpl_bgr, smpl_fetch, smpl_hw_ratio, smpl_herb_pct, smpl_woody_pct])
 
         # ==========================================
-        # 3. INDEPENDENT TRANSECT HELPER FUNCTION (For CGF)
+        # 3. CONTINUOUS LINE-INTERCEPT (0-360 Radial CGF)
         # ==========================================
         valid_y, valid_x = np.where(mask)
         num_valid_starts = len(valid_y)
 
-        def get_independent_transect(target_px):
-            """Generates an independent, randomized virtual transect of target_px length."""
+        def get_radial_continuous_samples(target_px):
+            """Generates continuous pixel chunks along true 0-360 degree radial vectors."""
             collected_px = 0
             chunks_main = []
             
             while collected_px < target_px and num_valid_starts > 0:
                 r_idx = np.random.randint(0, num_valid_starts)
-                sy, sx = valid_y[r_idx], valid_x[r_idx]
-                direction = np.random.randint(0, 4)
-                rem_px = target_px - collected_px
+                cy, cx = valid_y[r_idx], valid_x[r_idx]
+                angle = np.random.uniform(0, 2 * np.pi)
                 
-                if direction == 0: 
-                    c_main = main_array[sy, sx : min(sx + rem_px, ncols)]
-                    c_mask = mask[sy, sx : min(sx + rem_px, ncols)]
-                elif direction == 1: 
-                    c_main = main_array[sy : min(sy + rem_px, nrows), sx]
-                    c_mask = mask[sy : min(sy + rem_px, nrows), sx]
-                elif direction == 2: 
-                    c_main = main_array[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                    c_mask = mask[sy, max(0, sx - rem_px + 1) : sx + 1][::-1]
-                else: 
-                    c_main = main_array[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
-                    c_mask = mask[max(0, sy - rem_px + 1) : sy + 1, sx][::-1]
+                curr_step = 0
+                rem_px = target_px - collected_px
+                chunk = []
+                
+                while curr_step < rem_px:
+                    py = int(round(cy + curr_step * np.sin(angle)))
+                    px = int(round(cx + curr_step * np.cos(angle)))
                     
-                invalid_idx = np.where(~c_mask)[0]
-                if len(invalid_idx) > 0:
-                    c_main = c_main[:invalid_idx[0]]
+                    if py < 0 or py >= nrows or px < 0 or px >= ncols or not mask[py, px]:
+                        break
+                        
+                    chunk.append(main_array[py, px])
+                    curr_step += 1
                     
-                if len(c_main) > 0:
-                    chunks_main.append(c_main)
-                    collected_px += len(c_main)
+                if chunk:
+                    chunks_main.append(np.array(chunk))
+                    collected_px += len(chunk)
                     
             return chunks_main
 
         # ==========================================
-        # 4. CONTINUOUS LINE-INTERCEPT (CGF)
+        # 4. CONTINUOUS LINE-INTERCEPT METRIC EXTRACTION
         # ==========================================
         for L_meters in LN_INCS:
             req_px = int(round(L_meters / c_size))
             
-            chunks_main = get_independent_transect(req_px)
+            chunks_main = get_radial_continuous_samples(req_px)
             
             all_gaps = []
             actual_L = 0
@@ -243,7 +239,7 @@ def process_grid_cell(data_packet):
 # ====================================================================
 def calculate_metrics_for_fc(in_fc, out_fc, cell_size, is_circle=False):
     fc_name = os.path.basename(out_fc)
-    print(f'\n--- Processing Seasonal Metrics & Random Undersampling for {fc_name} ---')
+    print(f'\n--- Processing Seasonal Metrics & Random Point Undersampling for {fc_name} ---')
 
     shapes_dict = {}
     tasks = []
