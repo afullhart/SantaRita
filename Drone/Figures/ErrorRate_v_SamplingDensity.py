@@ -267,6 +267,9 @@ def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, l
         c = colors[i]
         ls = styles[i]
         
+        # Override the long legend text with a short string exclusively for the text box
+        short_label = 'Points' if i == 0 else 'Lines'
+        
         ax.plot(x_vals, mae_errs, marker='s', linestyle='', color=c, alpha=0.3)
         
         x_arr = np.array(x_vals, dtype=float)
@@ -302,11 +305,11 @@ def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, l
                 r2 = 1 - (ss_res / ss_tot)
                 
                 r2_str = ">0.999" if r2 > 0.999 else f"{r2:.3f}"
-                eq_texts.append(fr'$\bf{{{label_name}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} + {c_param:.2f} \ (R^2 = {r2_str})$')
+                eq_texts.append(fr'$\bf{{{short_label}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} + {c_param:.2f} \ (R^2 = {r2_str})$')
             except Exception as e:
-                eq_texts.append(fr'$\bf{{{label_name}:}}$ Fit Failed')
+                eq_texts.append(fr'$\bf{{{short_label}:}}$ Fit Failed')
         else:
-            eq_texts.append(fr'$\bf{{{label_name}:}}$ Not enough data')
+            eq_texts.append(fr'$\bf{{{short_label}:}}$ Not enough data')
 
     ax.set_xscale('log')
     
@@ -603,20 +606,17 @@ if '110m_NRI' in csv_files:
     print(f"Saved subset summary figure to: {subset_img_path}")
 
 
-# --- GENERATE 6TH FIGURE: PURE RANDOM VS. 1M INTERVAL LINE SAMPLING ---
+# --- GENERATE 6TH FIGURE: PURE RANDOM VS. 1M INTERVAL LINE SAMPLING (2x2 GRID) ---
 rl_csv_path = os.path.join(data_folder, 'SRER_NRI_Plots_110m_RandomLines.csv')
 
 if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
-    print(f"\n--- Generating 6th Comparison Plot (Pure Random vs 1m Interval Random Lines) ---")
+    print(f"\n--- Generating 6th Comparison Plot (2x2: BGR, HP, WP, MF) ---")
     
     df_rl = pd.read_csv(rl_csv_path)
     c_data = data_cache['110m_NRI'] 
     
     pt_cols_rl = [c for c in df_rl.columns if c.startswith('BGR_pt_')]
     points_rl = sorted([int(c.split('_')[-1]) for c in pt_cols_rl])
-
-    ln_cols_rl = [c for c in df_rl.columns if c.startswith('Gap_0_24_L_')]
-    lines_rl = sorted([int(c.split('_')[-1]) for c in ln_cols_rl])
     
     bgr_mae_rl, herb_mae_rl, woody_mae_rl, fetch_mae_rl = [], [], [], []
     
@@ -634,61 +634,57 @@ if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
             
         fetch_mae_rl.append(np.abs(df_rl[f'Fetch_pt_{pt}'] - df_rl['Fetch_Exact']).mean())
 
-    gap_data_rl = {}
-    for cat in gap_keys:
-        g_mae = []
-        exact_col = f'{cat}_Exact'
-        for ln in lines_rl:
-            l_col = f'{cat}_L_{ln}'
-            g_mae.append(np.abs(df_rl[l_col] - df_rl[exact_col]).mean())
-        gap_data_rl[cat] = g_mae
-
-    fig_comp, axes_comp = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
+    fig_comp, axes_comp = plt.subplots(nrows=2, ncols=2, figsize=(16, 12))
     master_lines_comp, master_labels_comp = [], []
 
+    # Top Left: BGR
     l = plot_comparison_convergence(axes_comp[0, 0], 
                                     c_data['points'], c_data['bgr_mae'], 'Pure Random Points', 
                                     points_rl, bgr_mae_rl, '1m Interval Random Lines', 
                                     'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    l = plot_comparison_convergence(axes_comp[1, 0], 
+    # Top Right: Herb
+    l = plot_comparison_convergence(axes_comp[0, 1], 
                                     c_data['points'], c_data['herb_mae'], 'Pure Random Points', 
                                     points_rl, herb_mae_rl, '1m Interval Random Lines', 
                                     'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    l = plot_comparison_convergence(axes_comp[1, 1], 
+    # Bottom Left: Woody
+    l = plot_comparison_convergence(axes_comp[1, 0], 
                                     c_data['points'], c_data['woody_mae'], 'Pure Random Points', 
                                     points_rl, woody_mae_rl, '1m Interval Random Lines', 
                                     'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    l = plot_comparison_convergence(axes_comp[2, 0], 
+    # Bottom Right: Fetch
+    l = plot_comparison_convergence(axes_comp[1, 1], 
                                     c_data['points'], c_data['fetch_mae'], 'Pure Random Points', 
                                     points_rl, fetch_mae_rl, '1m Interval Random Lines', 
                                     'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_comp.extend(l)
-    
-    for i, cat in enumerate(gap_keys):
-        r, c = gap_coords[i]
-        cat_title = gap_cats[cat]
-        l = plot_comparison_convergence(axes_comp[r, c], 
-                                        c_data['lines'], c_data['gap_data'][cat]['mae'], 'Line Segments (Original)', 
-                                        lines_rl, gap_data_rl[cat], 'Single Stitched Line (New)', 
-                                        cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
-        master_lines_comp.extend(l)
 
-    master_labels_comp = [line.get_label() for line in master_lines_comp]
-    build_master_legend(axes_comp[0, 1], master_lines_comp, master_labels_comp)
+    # Deduplicate legend items for the figure-level legend
+    handles_dict = {}
+    for line, label in zip(master_lines_comp, [line.get_label() for line in master_lines_comp]):
+        if label not in handles_dict:
+            handles_dict[label] = line
+            
+    # Add a unified legend to the bottom of the figure
+    fig_comp.legend(handles_dict.values(), handles_dict.keys(), 
+                    loc='lower center', ncol=2, fontsize=16, frameon=True, borderpad=1.0, 
+                    bbox_to_anchor=(0.5, 0.02))
     
-    fig_comp.suptitle('Convergence Comparison: Pure Random Points vs. 1m Interval Random Lines (110m NRI Base)', fontsize=28, fontweight='bold', y=0.99)
-    fig_comp.tight_layout(pad=3.0)  
+    fig_comp.suptitle('Convergence Comparison: Pure Random Points vs. 1m Interval Random Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    
+    # Compress the plots slightly to leave space for the title and the bottom legend
+    fig_comp.tight_layout(rect=[0, 0.08, 1, 0.95], pad=3.0)  
 
     comp_img_path = os.path.join(out_folder, '110m_NRI_RandomLine_Comparison.svg')
     plt.savefig(comp_img_path, format='svg', dpi=300)
     plt.close() 
-    print(f"Saved comparison figure to: {comp_img_path}")
+    print(f"Saved 2x2 comparison figure to: {comp_img_path}")
 
 
 # --- PREPARE DATA FOR 7TH & 8TH FIGURES (RANDOM LINES ACROSS SCALES) ---
