@@ -114,7 +114,8 @@ def process_grid_cell(data_packet):
             f_0_24   = (np.sum(all_gap_lengths[(all_gap_lengths < 0.25)]) / total_transect_length_m) * 100
             f_25_50  = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.25) & (all_gap_lengths <= 0.50)]) / total_transect_length_m) * 100
             f_51_100 = (np.sum(all_gap_lengths[(all_gap_lengths >= 0.51) & (all_gap_lengths <= 1.00)]) / total_transect_length_m) * 100
-            f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gaps_lengths <= 2.00)]) / total_transect_length_m) * 100
+            # TYPO FIXED ON THE LINE BELOW: all_gap_lengths <= 2.00
+            f_101_200= (np.sum(all_gap_lengths[(all_gap_lengths >= 1.01) & (all_gap_lengths <= 2.00)]) / total_transect_length_m) * 100
             f_gt_200 = (np.sum(all_gap_lengths[(all_gap_lengths > 2.00)]) / total_transect_length_m) * 100
         else:
             f_0_24 = f_25_50 = f_51_100 = f_101_200 = f_gt_200 = 0.0
@@ -365,4 +366,3 @@ if __name__ == '__main__':
         )
 
     print(f'\nSuccess! All metrics exported to: {csv_out_folder}')
-    
