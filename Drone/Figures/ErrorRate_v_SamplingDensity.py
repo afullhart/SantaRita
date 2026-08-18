@@ -510,8 +510,8 @@ if '110m_NRI' in data_cache:
 
     build_master_legend(axes[0, 1], master_lines, master_labels)
 
-    fig.suptitle('Convergence Summary Across Spatial Scales (Mapped to 110m NRI Base)', fontsize=28, fontweight='bold', y=0.99)
-    fig.tight_layout(pad=3.0)  
+    fig.suptitle('Convergence Summary Across Spatial Scales (Mapped to 110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
+    fig.tight_layout(rect=[0, 0.03, 1, 0.95], pad=2.5)  
 
     summary_img_path = os.path.join(out_folder, '110m_NRI_CrossScale_Summary.svg')
     plt.savefig(summary_img_path, format='svg', dpi=300)
@@ -596,8 +596,8 @@ if '110m_NRI' in csv_files:
     master_labels_sub = [line.get_label() for line in master_lines_sub]
     build_master_legend(axes_sub[0, 1], master_lines_sub, master_labels_sub)
     
-    fig_sub.suptitle('Convergence Summary Across BGR Subsets (110m NRI Base)', fontsize=28, fontweight='bold', y=0.99)
-    fig_sub.tight_layout(pad=3.0)  
+    fig_sub.suptitle('Convergence Summary Across BGR Subsets (110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
+    fig_sub.tight_layout(rect=[0, 0.03, 1, 0.95], pad=2.5)  
 
     subset_img_path = os.path.join(out_folder, '110m_NRI_Subset_Summary.svg')
     plt.savefig(subset_img_path, format='svg', dpi=300)
@@ -829,8 +829,8 @@ if '110m_NRI' in data_cache_rl:
 
     build_master_legend(axes7[0, 1], master_lines7, master_labels7)
 
-    fig7.suptitle('Convergence Summary Across Spatial Scales (1m Interval Random Lines mapped to 110m NRI Base)', fontsize=28, fontweight='bold', y=0.99)
-    fig7.tight_layout(pad=3.0)  
+    fig7.suptitle('Cross-Scale Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    fig7.tight_layout(rect=[0, 0.03, 1, 0.96], pad=2.5)  
 
     summary_img_path7 = os.path.join(out_folder, '110m_NRI_RandomLines_CrossScale_Summary.svg')
     plt.savefig(summary_img_path7, format='svg', dpi=300)
@@ -915,8 +915,8 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
     master_labels_sub8 = [line.get_label() for line in master_lines_sub8]
     build_master_legend(axes_sub8[0, 1], master_lines_sub8, master_labels_sub8)
     
-    fig_sub8.suptitle('Convergence Summary Across BGR Subsets (1m Interval Random Lines, 110m NRI Base)', fontsize=28, fontweight='bold', y=0.99)
-    fig_sub8.tight_layout(pad=3.0)  
+    fig_sub8.suptitle('BGR Subset Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    fig_sub8.tight_layout(rect=[0, 0.03, 1, 0.96], pad=2.5)  
 
     subset_img_path8 = os.path.join(out_folder, '110m_NRI_RandomLines_Subset_Summary.svg')
     plt.savefig(subset_img_path8, format='svg', dpi=300)
