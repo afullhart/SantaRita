@@ -61,11 +61,12 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
     if len(group) < 3:
         continue
     
-    # Extract the sample size and true means of the current bin
+    # Extract the sample size, true means, and exact geometric center of the bin
     d = {
         'True_BG_Mean': group['Exact_BGR_Pct'].mean(),
         'True_Fetch_Mean': group['Exact_Fetch_m'].mean(),
-        'Sample_Size': len(group) 
+        'Sample_Size': len(group),
+        'Bin_Center': bin_val.mid
     }
     
     if 'Exact_LPI_Pct' in group.columns:
@@ -228,11 +229,22 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
     
     if col == 0: 
         ax_val.set_ylabel("Sampled Value", fontsize=13)
-        for _, row in mae_df.iterrows():
-            ax_val.text(row['True_BG_Mean'], 0.02, f"n={int(row['Sample_Size'])}", 
-                        transform=ax_val.get_xaxis_transform(), 
-                        fontsize=9, color='black', ha='center', va='bottom', rotation=90, 
-                        bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8, edgecolor='lightgray'))
+        
+        # Add a secondary axis for the sample size bar chart using exact bin intervals
+        ax_twin = ax_val.twinx()
+        ax_twin.bar(mae_df['Bin_Center'], mae_df['Sample_Size'], width=4.5, color='gray', alpha=0.25, zorder=0)
+        ax_twin.set_ylim(0, 75) # Scale y-axis up to 75 so the max bars stretch closer to the legend
+        ax_twin.set_yticks([0, 10, 20, 30, 40])
+        # Place ticks inside to prevent layout collision; push labels slightly inside too
+        ax_twin.tick_params(axis='y', direction='in', pad=-15, labelsize=9)
+        for label in ax_twin.get_yticklabels():
+            label.set_horizontalalignment('right')
+            
+        ax_twin.set_ylabel("Bin Sample Size", fontsize=10, rotation=270, labelpad=15)
+            
+        # Ensure bars stay behind the main plot lines
+        ax_val.set_zorder(ax_twin.get_zorder() + 1)
+        ax_val.patch.set_visible(False)
     
     ax_mae.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax_mae.set_xlim(0, 100)
@@ -331,19 +343,6 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config_2):
         else:
             ax.set_xlabel("")
 
-    if idx == 0: 
-        for i, (_, r) in enumerate(mae_df.iterrows()):
-            if i < 4:
-                y_pos = 0.98
-                va_align = 'top'
-            else:
-                y_pos = 0.02
-                va_align = 'bottom'
-                
-            ax.text(r['True_BG_Mean'], y_pos, f"n={int(r['Sample_Size'])}", 
-                        transform=ax.get_xaxis_transform(), 
-                        fontsize=6, color='black', ha='center', va=va_align, rotation=90)
-
 fig2.supylabel("Fraction % (or, m for Mean Fetch)", fontsize=14, weight='bold')
 
 # ====================================================================
@@ -402,6 +401,22 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
     
     if row == 0:
         ax_val.legend(loc='upper right', fontsize=10)
+        
+        # Add a secondary axis for the sample size bar chart using exact bin intervals
+        ax_twin = ax_val.twinx()
+        ax_twin.bar(mae_df['Bin_Center'], mae_df['Sample_Size'], width=4.5, color='gray', alpha=0.25, zorder=0)
+        ax_twin.set_ylim(0, 75) # Scale y-axis up to 75 so the max bars stretch closer to the legend
+        ax_twin.set_yticks([0, 10, 20, 30, 40])
+        # Place ticks inside to prevent layout collision; push labels slightly inside too
+        ax_twin.tick_params(axis='y', direction='in', pad=-15, labelsize=9)
+        for label in ax_twin.get_yticklabels():
+            label.set_horizontalalignment('right')
+            
+        ax_twin.set_ylabel("Bin Sample Size", fontsize=10, rotation=270, labelpad=15)
+            
+        # Ensure bars stay behind the main plot lines
+        ax_val.set_zorder(ax_twin.get_zorder() + 1)
+        ax_val.patch.set_visible(False)
 
     ax_mae.grid(True, alpha=0.3)
     ax_mre.grid(True, alpha=0.3)
@@ -432,7 +447,7 @@ fig4_config = [
 ]
 
 fig4, axes4 = plt.subplots(6, 4, figsize=(16, 24), constrained_layout=True)
-fig4.suptitle("Drone Imagery Spatial Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+fig4.suptitle("Drone Imagery Spatial Metrics Across Bare Ground Gradient", fontsize=24, weight='bold')
 
 for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
     ax_val = axes4[row, 0]
@@ -468,10 +483,11 @@ for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
         ax.set_xlim(0, 100)
         ax.set_xticks(np.arange(0, 81, 20)) 
         ax.axvline(50, color='gray', linestyle=':', linewidth=2)
+        ax.tick_params(axis='both', labelsize=12)
         
-    ax_val.set_ylabel(title, fontsize=13, weight='bold') 
+    ax_val.set_ylabel(title, fontsize=16, weight='bold') 
     ax_val.grid(True, alpha=0.3)
-    ax_val.legend(loc='upper right', fontsize=10)
+    ax_val.legend(loc='upper right', fontsize=12)
 
     ax_mae.grid(True, alpha=0.3)
     ax_mre.grid(True, alpha=0.3)
@@ -480,14 +496,14 @@ for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
     ax_bias.grid(True, alpha=0.3)
 
     if row == 0:
-        ax_val.set_title("Sampled Value", fontsize=15, pad=12)
-        ax_mae.set_title("MAE", fontsize=15, pad=12)
-        ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
-        ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+        ax_val.set_title("Sampled Value", fontsize=18, pad=12)
+        ax_mae.set_title("MAE", fontsize=18, pad=12)
+        ax_mre.set_title("MRE (%)", fontsize=18, pad=12)
+        ax_bias.set_title("Mean Bias", fontsize=18, pad=12)
 
     if row == 5:
         for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
-            ax.set_xlabel("True Bare Ground (%)", fontsize=12)
+            ax.set_xlabel("True Bare Ground (%)", fontsize=15)
 
 # ====================================================================
 # 6. EXPORT
