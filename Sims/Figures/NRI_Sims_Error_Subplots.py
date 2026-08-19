@@ -89,8 +89,8 @@ def process_simulation_iteration(task):
     base_lambda = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
     # Targeted boost exclusively for low BGR to overcome cluster overlap
-    if target_bg <= 10:
-        lambda_target = np.interp(target_bg, [0, 10], [6.5, base_lambda])
+    if target_bg <= 25:
+        lambda_target = np.interp(target_bg, [0, 25], [6.5, base_lambda])
     else:
         lambda_target = base_lambda
     
@@ -489,7 +489,7 @@ if __name__ == '__main__':
     ]
 
     fig, axes = plt.subplots(4, 9, figsize=(36, 16), constrained_layout=True)
-    fig.suptitle("Hybrid Simulation Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig.suptitle("Simulation Metrics (Values, MAE, MRE, Bias) Across Bare Ground Gradient", fontsize=20, weight='bold')
     
     for col, (prefix, title, scales, col_color) in enumerate(plot_config):
         ax_val = axes[0, col]
@@ -550,7 +550,7 @@ if __name__ == '__main__':
     ]
 
     fig2, axes2 = plt.subplots(3, 4, figsize=(16, 12), constrained_layout=True)
-    fig2.suptitle("Hybrid Simulation Cover Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig2.suptitle("Simulation Cover Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
 
     for row, (prefix, title, scales, col_color) in enumerate(fig2_config):
         ax_val = axes2[row, 0]
@@ -615,7 +615,7 @@ if __name__ == '__main__':
     ]
 
     fig3, axes3 = plt.subplots(6, 4, figsize=(16, 24), constrained_layout=True)
-    fig3.suptitle("Hybrid Simulation Spatial Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+    fig3.suptitle("Simulation Spatial Metrics Across Bare Ground Gradient", fontsize=24, weight='bold')
 
     for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
         ax_val = axes3[row, 0]
@@ -642,8 +642,10 @@ if __name__ == '__main__':
         for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
             ax.set_xlim(0, 100)
             ax.set_xticks(np.arange(0, 81, 20)) 
+            ax.axvline(50, color='gray', linestyle=':', linewidth=2)
+            ax.tick_params(axis='both', labelsize=12)
             
-        ax_val.set_ylabel(title, fontsize=13, weight='bold') 
+        ax_val.set_ylabel(title, fontsize=16, weight='bold') 
         ax_val.grid(True, alpha=0.3)
         
         # Determine legend placement based on whether the data trends up or down
@@ -652,7 +654,7 @@ if __name__ == '__main__':
         end_val = mae_df[f'{last_var_base}_Val'].iloc[-1]
         leg_loc = 'upper left' if end_val >= start_val else 'upper right'
         
-        ax_val.legend(loc=leg_loc, fontsize=10)
+        ax_val.legend(loc=leg_loc, fontsize=12)
 
         ax_mae.grid(True, alpha=0.3)
         ax_mre.grid(True, alpha=0.3)
@@ -661,23 +663,23 @@ if __name__ == '__main__':
         ax_bias.grid(True, alpha=0.3)
 
         if row == 0:
-            ax_val.set_title("Sampled Value", fontsize=15, pad=12)
-            ax_mae.set_title("MAE", fontsize=15, pad=12)
-            ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
-            ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+            ax_val.set_title("Sampled Value", fontsize=18, pad=12)
+            ax_mae.set_title("MAE", fontsize=18, pad=12)
+            ax_mre.set_title("MRE (%)", fontsize=18, pad=12)
+            ax_bias.set_title("Mean Bias", fontsize=18, pad=12)
 
         if row == 5:
             for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
-                ax.set_xlabel("True Bare Ground (%)", fontsize=12)
+                ax.set_xlabel("True Bare Ground (%)", fontsize=15)
 
     # ====================================================================
     # SAVING AND SHOWING PLOTS
     # ====================================================================
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_path1 = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.svg')
-    img_path2 = os.path.join(script_dir, 'Hybrid_Simulation_Cover_Metrics.svg')
-    img_path3 = os.path.join(script_dir, 'Hybrid_Simulation_Spatial_Metrics_Rows.svg')
-    csv_path = os.path.join(script_dir, 'Hybrid_Simulation_Metrics_MultiScale.csv')
+    img_path1 = os.path.join(script_dir, 'Simulation_Metrics_MultiScale.svg')
+    img_path2 = os.path.join(script_dir, 'Simulation_Cover_Metrics.svg')
+    img_path3 = os.path.join(script_dir, 'Simulation_Spatial_Metrics_Rows.svg')
+    csv_path = os.path.join(script_dir, 'Simulation_Metrics_MultiScale.csv')
     
     fig.savefig(img_path1, format='svg', dpi=300, bbox_inches='tight')
     fig2.savefig(img_path2, format='svg', dpi=300, bbox_inches='tight')
