@@ -225,7 +225,11 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
     ax_val.set_xlim(0, 100)
     ax_val.set_xticks(np.arange(0, 81, 20))  
     ax_val.grid(True, alpha=0.3)
-    ax_val.legend(loc='upper right', fontsize=10)
+    
+    if col == 0:
+        ax_val.legend(loc='lower right', fontsize=10)
+    else:
+        ax_val.legend(loc='upper right', fontsize=10)
     
     if col == 0: 
         ax_val.set_ylabel("Sampled Value", fontsize=13)
@@ -400,7 +404,7 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
     ax_val.grid(True, alpha=0.3)
     
     if row == 0:
-        ax_val.legend(loc='upper right', fontsize=10)
+        ax_val.legend(loc='lower right', fontsize=10)
         
         # Add a secondary axis for the sample size bar chart using exact bin intervals
         ax_twin = ax_val.twinx()
@@ -487,7 +491,9 @@ for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
         
     ax_val.set_ylabel(title, fontsize=16, weight='bold') 
     ax_val.grid(True, alpha=0.3)
-    ax_val.legend(loc='upper right', fontsize=12)
+    
+    # Legend targeting: Place legend in lower right for ALL subplots in the first column
+    ax_val.legend(loc='lower right', fontsize=12)
 
     ax_mae.grid(True, alpha=0.3)
     ax_mre.grid(True, alpha=0.3)
