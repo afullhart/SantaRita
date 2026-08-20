@@ -225,11 +225,7 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
     ax_val.set_xlim(0, 100)
     ax_val.set_xticks(np.arange(0, 81, 20))  
     ax_val.grid(True, alpha=0.3)
-    
-    if col == 0:
-        ax_val.legend(loc='lower right', fontsize=10)
-    else:
-        ax_val.legend(loc='upper right', fontsize=10)
+    ax_val.legend(loc='upper right', fontsize=10)
     
     if col == 0: 
         ax_val.set_ylabel("Sampled Value", fontsize=13)
@@ -404,7 +400,7 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
     ax_val.grid(True, alpha=0.3)
     
     if row == 0:
-        ax_val.legend(loc='lower right', fontsize=10)
+        ax_val.legend(loc='upper right', fontsize=10)
         
         # Add a secondary axis for the sample size bar chart using exact bin intervals
         ax_twin = ax_val.twinx()
