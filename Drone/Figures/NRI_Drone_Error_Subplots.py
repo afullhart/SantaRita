@@ -57,8 +57,8 @@ results = []
 
 # Group by the 5% bins and calculate metrics
 for bin_val, group in df.groupby('BG_Bin', observed=False):
-    # FILTER: Skip bins with fewer than 3 plots to prevent volatile edge-case spikes
-    if len(group) < 3:
+    # FILTER: Skip empty bins, but keep edge-cases with low sample sizes
+    if group.empty:
         continue
     
     # Extract the sample size, true means, and exact geometric center of the bin
@@ -250,13 +250,13 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
     ax_mae.set_xlim(0, 100)
     ax_mae.set_xticks(np.arange(0, 81, 20))  
     ax_mae.grid(True, alpha=0.3)
-    if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
+    if col == 0: ax_mae.set_ylabel("Mean Absolute Error", fontsize=13)
         
     ax_mre.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax_mre.set_xlim(0, 100)
     ax_mre.set_xticks(np.arange(0, 81, 20))  
     ax_mre.grid(True, alpha=0.3)
-    if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
+    if col == 0: ax_mre.set_ylabel("Mean Relative Error (%)", fontsize=13)
         
     ax_bias.axvline(50, color='gray', linestyle=':', linewidth=2)
     ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
@@ -264,7 +264,7 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
     ax_bias.set_xticks(np.arange(0, 81, 20))
     ax_bias.grid(True, alpha=0.3)
     ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
-    if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
+    if col == 0: ax_bias.set_ylabel("Mean Absolute Bias", fontsize=13)
 
 # ====================================================================
 # PLOTTING - FIGURE 2: UNIQUE 2x5 DRONE VALUES GRID
@@ -426,9 +426,9 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
 
     if row == 0:
         ax_val.set_title("Sampled Value", fontsize=15, pad=12)
-        ax_mae.set_title("MAE", fontsize=15, pad=12)
-        ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
-        ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+        ax_mae.set_title("Mean Absolute Error", fontsize=15, pad=12)
+        ax_mre.set_title("Mean Relative Error (%)", fontsize=15, pad=12)
+        ax_bias.set_title("Mean Absolute Bias", fontsize=15, pad=12)
 
     if row == 2:
         for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
@@ -497,9 +497,9 @@ for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
 
     if row == 0:
         ax_val.set_title("Sampled Value", fontsize=18, pad=12)
-        ax_mae.set_title("MAE", fontsize=18, pad=12)
-        ax_mre.set_title("MRE (%)", fontsize=18, pad=12)
-        ax_bias.set_title("Mean Bias", fontsize=18, pad=12)
+        ax_mae.set_title("Mean Absolute Error", fontsize=18, pad=12)
+        ax_mre.set_title("Mean Relative Error (%)", fontsize=18, pad=12)
+        ax_bias.set_title("Mean Absolute Bias", fontsize=18, pad=12)
 
     if row == 5:
         for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
