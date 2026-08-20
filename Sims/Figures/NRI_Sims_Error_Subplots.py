@@ -13,7 +13,7 @@ WORKER_CACHE = {}
 
 def init_worker(plot_radius, hub_radius, cell_size):
     """
-    Initializes static grids once per CPU core to prevent redundant 
+    Initializes static grids once per CPU core to prevent redundant
     memory allocation across the simulation iterations.
     """
     x = np.arange(-plot_radius, plot_radius + (cell_size * 0.1), cell_size)
@@ -23,7 +23,7 @@ def init_worker(plot_radius, hub_radius, cell_size):
     
     dist_from_center = np.sqrt(X**2 + Y**2)
     valid_mask = dist_from_center <= plot_radius
-    total_valid_pixels = np.sum(valid_mask)
+    total_valid_pixels = np.count_nonzero(valid_mask)
     
     angles = [0, 120, 240]
     spoke_length_m = plot_radius - hub_radius
@@ -88,15 +88,25 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     base_lambda = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    # Targeted boost exclusively for low BGR to overcome cluster overlap
-    if target_bg <= 25:
-        lambda_target = np.interp(target_bg, [0, 25], [6.5, base_lambda])
+    # 1. PRESERVE ORIGINAL WOODY CURVE: Use the old [0, 10] bounds
+    if target_bg <= 10:
+        lambda_woody_base = np.interp(target_bg, [0, 10], [6.5, base_lambda])
     else:
-        lambda_target = base_lambda
+        lambda_woody_base = base_lambda
+        
+    # 2. ENSURE ENOUGH PUNCHABLE COVER: Use the new [0, 25] bounds for total cover
+    if target_bg <= 25:
+        lambda_total = np.interp(target_bg, [0, 25], [6.5, base_lambda])
+    else:
+        lambda_total = base_lambda
     
     alpha_large = 0.75
-    lambda_large = lambda_target * alpha_large
-    lambda_small = lambda_target * (1 - alpha_large)
+    
+    # 3. Calculate Large (Woody) exactly as it was originally
+    lambda_large = lambda_woody_base * alpha_large
+    
+    # 4. Calculate Small (Herbaceous) to make up the rest of the required total
+    lambda_small = lambda_total - lambda_large
     
     r_large_bnds = (0.3, 2.0)
     r_small_bnds = (0.10, 0.30)
@@ -247,12 +257,13 @@ def process_simulation_iteration(task):
     main_array[large_mask] = large_shrub_value
 
     target_bare_pixels = int(total_valid_pixels * (target_bg / 100.0))
-    current_bare_pixels = np.sum((main_array == target_value) & valid_mask)
+    # OPTIMIZATION: count_nonzero for Booleans
+    current_bare_pixels = np.count_nonzero((main_array == target_value) & valid_mask)
     pixels_to_punch = target_bare_pixels - current_bare_pixels
     
     if pixels_to_punch > 0:
         punchable_mask = small_mask & ~large_mask & valid_mask
-        punchable_count = np.sum(punchable_mask)
+        punchable_count = np.count_nonzero(punchable_mask)
         
         if pixels_to_punch >= punchable_count:
             main_array[punchable_mask] = target_value
@@ -275,11 +286,11 @@ def process_simulation_iteration(task):
     main_array[~valid_mask] = -9999 
     
     is_bare_full = (main_array == target_value)
-    bare_pixels = np.sum(is_bare_full[valid_mask])
+    bare_pixels = np.count_nonzero(is_bare_full[valid_mask])
     true_bg_pct = (bare_pixels / total_valid_pixels) * 100
 
-    true_herb_pct = (np.sum(main_array[valid_mask] == small_shrub_value) / total_valid_pixels) * 100
-    true_woody_pct = (np.sum(main_array[valid_mask] == large_shrub_value) / total_valid_pixels) * 100
+    true_herb_pct = (np.count_nonzero(main_array[valid_mask] == small_shrub_value) / total_valid_pixels) * 100
+    true_woody_pct = (np.count_nonzero(main_array[valid_mask] == large_shrub_value) / total_valid_pixels) * 100
     
     dist_array = distance_transform_edt(is_bare_full) * cell_size
     valid_full_fetch = dist_array[valid_mask]
@@ -301,6 +312,7 @@ def process_simulation_iteration(task):
     
     all_exhaust_gaps = np.concatenate([row_gaps, col_gaps])
     
+    # Gap calculations remain np.sum because we are summing actual lengths in meters, not counting True/False.
     ex_0_24 = (np.sum(all_exhaust_gaps[all_exhaust_gaps < 0.25]) / total_exhaust_length_m) * 100
     ex_25_50 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.25) & (all_exhaust_gaps <= 0.50)]) / total_exhaust_length_m) * 100
     ex_51_100 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.51) & (all_exhaust_gaps <= 1.00)]) / total_exhaust_length_m) * 100
@@ -333,20 +345,17 @@ def process_simulation_iteration(task):
             all_pixels = np.concatenate([t[:-1] for t in all_nri_transects])
             valid_pixels = all_pixels[all_pixels != -9999] 
             total_nri_pixels = len(valid_pixels)
-            sampled_bg = (np.sum(valid_pixels == target_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
-            sampled_herb = (np.sum(valid_pixels == small_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
-            sampled_woody = (np.sum(valid_pixels == large_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_bg = (np.count_nonzero(valid_pixels == target_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_herb = (np.count_nonzero(valid_pixels == small_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
+            sampled_woody = (np.count_nonzero(valid_pixels == large_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            sampled_pixels = []
-            for t in all_nri_transects:
-                sampled_pixels.extend(t[:-1:step])
-                
-            sampled_pixels_arr = np.array(sampled_pixels)
+            # OPTIMIZATION: Native NumPy concatenate
+            sampled_pixels_arr = np.concatenate([t[:-1:step] for t in all_nri_transects])
             valid_sampled_arr = sampled_pixels_arr[sampled_pixels_arr != -9999] 
             total_valid_sampled = len(valid_sampled_arr)
-            sampled_bg = (np.sum(valid_sampled_arr == target_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
-            sampled_herb = (np.sum(valid_sampled_arr == small_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
-            sampled_woody = (np.sum(valid_sampled_arr == large_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
+            sampled_bg = (np.count_nonzero(valid_sampled_arr == target_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
+            sampled_herb = (np.count_nonzero(valid_sampled_arr == small_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
+            sampled_woody = (np.count_nonzero(valid_sampled_arr == large_shrub_value) / total_valid_sampled) * 100 if total_valid_sampled > 0 else 0.0
             
         res[f'BG_{label_str}_Error'] = sampled_bg - true_bg_pct
         res[f'Herb_{label_str}_Error'] = sampled_herb - true_herb_pct
@@ -360,7 +369,7 @@ def process_simulation_iteration(task):
     
     all_nri_gaps = np.concatenate([get_gap_lengths(t, target_value, cell_size) for t in all_nri_transects])
     
-    valid_nri_pixel_count = np.sum(np.concatenate(all_nri_transects) != -9999)
+    valid_nri_pixel_count = np.count_nonzero(np.concatenate(all_nri_transects) != -9999)
     adjusted_nri_length_m = valid_nri_pixel_count * cell_size
     
     res['Gap_0_24_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps < 0.25]) / adjusted_nri_length_m) * 100) - ex_0_24
@@ -368,6 +377,9 @@ def process_simulation_iteration(task):
     res['Gap_51_100_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 0.51) & (all_nri_gaps <= 1.00)]) / adjusted_nri_length_m) * 100) - ex_51_100
     res['Gap_101_200_0cm_Error'] = ((np.sum(all_nri_gaps[(all_nri_gaps >= 1.01) & (all_nri_gaps <= 2.00)]) / adjusted_nri_length_m) * 100) - ex_101_200
     res['Gap_gt_200_0cm_Error'] = ((np.sum(all_nri_gaps[all_nri_gaps > 2.00]) / adjusted_nri_length_m) * 100) - ex_gt_200
+    
+    # Force memory release of massive arrays before returning
+    del main_array, valid_full_fetch, all_nri_gaps, all_exhaust_gaps
     
     return res
 
@@ -405,11 +417,13 @@ if __name__ == '__main__':
 
     results = []
     
-    # Passing the initializer functions handles memory caching perfectly per core
+    # OPTIMIZATION REVERTED: Small chunks prevent RAM overload with massive spatial arrays
+    optimal_chunksize = 1
+    
     with concurrent.futures.ProcessPoolExecutor(max_workers=cores, 
                                                 initializer=init_worker, 
                                                 initargs=(plot_radius, hub_radius, cell_size)) as executor:
-        for count, result in enumerate(executor.map(process_simulation_iteration, tasks), 1):
+        for count, result in enumerate(executor.map(process_simulation_iteration, tasks, chunksize=optimal_chunksize), 1):
             results.append(result)
             if count % 100 == 0 or count == total_tasks:
                 print(f"  -> Processed {count} / {total_tasks} simulations...")
@@ -530,15 +544,15 @@ if __name__ == '__main__':
         if col == 0: ax_val.set_ylabel("Sampled Value", fontsize=13)
         
         ax_mae.grid(True, alpha=0.3)
-        if col == 0: ax_mae.set_ylabel("MAE", fontsize=13)
+        if col == 0: ax_mae.set_ylabel("Mean Absolute Error", fontsize=13)
             
         ax_mre.grid(True, alpha=0.3)
-        if col == 0: ax_mre.set_ylabel("MRE (%)", fontsize=13)
+        if col == 0: ax_mre.set_ylabel("Mean Relative Error (%)", fontsize=13)
             
         ax_bias.axhline(0, color='gray', linestyle='--', linewidth=1.5)
         ax_bias.grid(True, alpha=0.3)
         ax_bias.set_xlabel("True Bare Ground (%)", fontsize=12)
-        if col == 0: ax_bias.set_ylabel("Mean Bias", fontsize=13)
+        if col == 0: ax_bias.set_ylabel("Mean Absolute Bias", fontsize=13)
 
     # ====================================================================
     # PLOTTING - FIGURE 2: COVER METRICS (BG, HERB, WOODY) - 3 Rows x 4 Cols
@@ -594,9 +608,9 @@ if __name__ == '__main__':
 
         if row == 0:
             ax_val.set_title("Sampled Value", fontsize=15, pad=12)
-            ax_mae.set_title("MAE", fontsize=15, pad=12)
-            ax_mre.set_title("MRE (%)", fontsize=15, pad=12)
-            ax_bias.set_title("Mean Bias", fontsize=15, pad=12)
+            ax_mae.set_title("Mean Absolute Error", fontsize=15, pad=12)
+            ax_mre.set_title("Mean Relative Error (%)", fontsize=15, pad=12)
+            ax_bias.set_title("Mean Absolute Bias", fontsize=15, pad=12)
 
         if row == 2:
             for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
@@ -664,9 +678,9 @@ if __name__ == '__main__':
 
         if row == 0:
             ax_val.set_title("Sampled Value", fontsize=18, pad=12)
-            ax_mae.set_title("MAE", fontsize=18, pad=12)
-            ax_mre.set_title("MRE (%)", fontsize=18, pad=12)
-            ax_bias.set_title("Mean Bias", fontsize=18, pad=12)
+            ax_mae.set_title("Mean Absolute Error", fontsize=18, pad=12)
+            ax_mre.set_title("Mean Relative Error (%)", fontsize=18, pad=12)
+            ax_bias.set_title("Mean Absolute Bias", fontsize=18, pad=12)
 
         if row == 5:
             for ax in [ax_val, ax_mae, ax_mre, ax_bias]:
