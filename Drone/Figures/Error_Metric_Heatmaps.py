@@ -183,6 +183,34 @@ def add_strikes(ax, data_pivot):
                 # Draw a diagonal line from bottom-left to top-right of the cell
                 ax.plot([j, j+1], [i+1, i], color='gray', lw=2.0)
 
+def create_custom_annot(data_pivot):
+    """Generates custom annotations, formatting 'MF' to 3 decimals and others to 2."""
+    annot = np.empty_like(data_pivot.values, dtype=object)
+    for i in range(data_pivot.shape[0]):
+        metric = data_pivot.index[i]
+        for j in range(data_pivot.shape[1]):
+            val = data_pivot.iloc[i, j]
+            if pd.isna(val):
+                annot[i, j] = ""
+            else:
+                # Apply 3 decimal places specifically for Mean Fetch (MF)
+                annot[i, j] = f"{val:.3f}" if metric == 'MF' else f"{val:.2f}"
+    return annot
+
+def create_2dec_annot(data_pivot):
+    """Generates custom annotations, formatting 'MF' to 2 decimals. """
+    annot = np.empty_like(data_pivot.values, dtype=object)
+    for i in range(data_pivot.shape[0]):
+        metric = data_pivot.index[i]
+        for j in range(data_pivot.shape[1]):
+            val = data_pivot.iloc[i, j]
+            if pd.isna(val):
+                annot[i, j] = ""
+            else:
+                # Apply 3 decimal places specifically for Mean Fetch (MF)
+                annot[i, j] = f"{val:.2f}"
+    return annot
+
 # Create custom string annotations for Sen's Slope to append asterisks
 sens_annot = np.empty_like(sens_pivot.values, dtype=object)
 for i in range(sens_pivot.shape[0]):
@@ -193,6 +221,7 @@ for i in range(sens_pivot.shape[0]):
             sens_annot[i, j] = ""
         else:
             sens_annot[i, j] = f"{val:.2f}*" if is_sig else f"{val:.2f}"
+
 
 # ====================================================================
 # 6. PLOTTING - FIGURE 1: Pearson r, Spearman rho, & Sen's Slope
@@ -235,11 +264,16 @@ plt.show()
 # ====================================================================
 # 7. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
 # ====================================================================
+# Generate custom annotations for Figure 2
+pbias_annot = create_2dec_annot(pbias_pivot)
+mae_annot = create_custom_annot(mae_pivot)
+mre_annot = create_2dec_annot(mre_pivot)
+
 # Widened to 22x8 to make individual subplots wider
 fig2, axes2 = plt.subplots(1, 3, figsize=(22, 8))
 
 # Left Plot: Percent Bias (PBIAS)
-sns.heatmap(pbias_pivot, annot=True, fmt=".2f", cmap="vlag", center=0, ax=axes2[0], 
+sns.heatmap(pbias_pivot, annot=pbias_annot, fmt="", cmap="vlag", center=0, ax=axes2[0], 
             annot_kws={"size": 18}, cbar_kws={'label': 'Percent Bias (%)'}, mask=pbias_pivot.isnull()) 
 add_strikes(axes2[0], pbias_pivot)  
 axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', pad=20, fontsize=22, fontweight='bold')
@@ -248,7 +282,7 @@ axes2[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold
 axes2[0].tick_params(axis='both', which='major', labelsize=16)
 
 # Middle Plot: Mean Absolute Error (MAE)
-sns.heatmap(mae_pivot, annot=True, fmt=".2f", cmap="Reds", ax=axes2[1], 
+sns.heatmap(mae_pivot, annot=mae_annot, fmt="", cmap="Reds", ax=axes2[1], 
             annot_kws={"size": 18}, cbar_kws={'label': 'Mean Absolute Error'}, mask=mae_pivot.isnull()) 
 add_strikes(axes2[1], mae_pivot)  
 axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', pad=20, fontsize=22, fontweight='bold')
@@ -257,7 +291,7 @@ axes2[1].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold
 axes2[1].tick_params(axis='both', which='major', labelsize=16)
 
 # Right Plot: Mean Relative Error (MRE)
-sns.heatmap(mre_pivot, annot=True, fmt=".2f", cmap="Oranges", ax=axes2[2], 
+sns.heatmap(mre_pivot, annot=mre_annot, fmt="", cmap="Oranges", ax=axes2[2], 
             annot_kws={"size": 18}, cbar_kws={'label': "Mean Relative Error (%)"}, mask=mre_pivot.isnull()) 
 add_strikes(axes2[2], mre_pivot)  
 axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", pad=20, fontsize=22, fontweight='bold')
@@ -272,15 +306,18 @@ plt.show()
 # ====================================================================
 # 8. PLOTTING - FIGURE 3: Mean Prediction Interval Width (MPIW)
 # ====================================================================
+# Generate custom annotations for Figure 3
+mpiw_annot = create_custom_annot(mpiw_pivot)
+
 # Slightly widened to match the individual subplot proportions of the new figures
 fig3, ax3 = plt.subplots(figsize=(8.5, 8))
 
 # Single Plot: Mean Prediction Interval Width
-sns.heatmap(mpiw_pivot, annot=True, fmt=".2f", cmap="Purples", ax=ax3, 
+sns.heatmap(mpiw_pivot, annot=mpiw_annot, fmt="", cmap="Purples", ax=ax3, 
             annot_kws={"size": 18}, cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
 add_strikes(ax3, mpiw_pivot)  
 ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=20, fontsize=22, fontweight='bold')
-ax3.set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold') # Kept this as originally requested by your initial code
+ax3.set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold')
 ax3.set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 ax3.tick_params(axis='both', which='major', labelsize=16)
 
