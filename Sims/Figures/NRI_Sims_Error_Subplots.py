@@ -80,7 +80,7 @@ def process_simulation_iteration(task):
     target_value = 3
 
     # ==========================================
-    # Z-INDEXED HYBRID LOGIC 
+    # Z-INDEXED HYBRID LOGIC (EXPONENTIAL DECAY)
     # ==========================================
     organic_weight = 0.60
     organic_bg_pct = target_bg * organic_weight
@@ -88,33 +88,32 @@ def process_simulation_iteration(task):
     initial_veg_coverage = (100.0 - target_bg) / (100.0 - organic_bg_pct)
     base_lambda = -np.log(1 - initial_veg_coverage) if initial_veg_coverage < 0.99 else 5.0
     
-    # 1. PRESERVE ORIGINAL WOODY CURVE: Use the old [0, 10] bounds
-    if target_bg <= 10:
-        lambda_woody_base = np.interp(target_bg, [0, 10], [6.5, base_lambda])
-    else:
-        lambda_woody_base = base_lambda
-        
-    # 2. ENSURE ENOUGH PUNCHABLE COVER: Use the new [0, 25] bounds for total cover
-    if target_bg <= 25:
-        lambda_total = np.interp(target_bg, [0, 25], [6.5, base_lambda])
-    else:
-        lambda_total = base_lambda
+    # Calculate how much extra boost we need at the absolute lowest BG
+    boost_amount = max(0.0, 6.5 - base_lambda)
+    
+    # 1. PRESERVE ORIGINAL WOODY CURVE (Decays rapidly by ~12% BG)
+    woody_decay = np.exp(-target_bg / 4.0)
+    lambda_woody_base = base_lambda + (boost_amount * woody_decay)
+    
+    # 2. ENSURE ENOUGH PUNCHABLE COVER (Decays smoothly by ~40% BG)
+    total_decay = np.exp(-target_bg / 12.0)
+    lambda_total = base_lambda + (boost_amount * total_decay)
     
     alpha_large = 0.75
     
-    # 3. Calculate Large (Woody) exactly as it was originally
+    # 3. Calculate Large (Woody)
     lambda_large = lambda_woody_base * alpha_large
     
-    # 4. Calculate Small (Herbaceous) to make up the rest of the required total
+    # 4. Calculate Small (Herbaceous)
     lambda_small = lambda_total - lambda_large
     
     r_large_bnds = (0.3, 2.0)
     r_small_bnds = (0.10, 0.30)
     
-    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3)
-    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3)
+    mean_area_large = np.pi * ((r_large_bnds[0]**2 + r_large_bnds[0]*r_large_bnds[1] + r_large_bnds[1]**2) / 3.0)
+    mean_area_small = np.pi * ((r_small_bnds[0]**2 + r_small_bnds[0]*r_small_bnds[1] + r_small_bnds[1]**2) / 3.0)
     
-    plot_area = np.pi * plot_radius**2
+    plot_area = np.pi * (plot_radius**2)
     num_large = int(lambda_large * (plot_area / mean_area_large))
     num_small = int(lambda_small * (plot_area / mean_area_small))
     
@@ -127,9 +126,10 @@ def process_simulation_iteration(task):
     # DECOUPLED SPATIAL PROCESSES
     # ==========================================
     cluster_spread = np.interp(target_bg, [0, 100], [8.0, 1.0])
-    shrubs_per_cluster = int(np.interp(target_bg, [0, 100], [2, 10]))
     
-    num_parents = max(1, num_large // shrubs_per_cluster) if num_large > 0 else 0
+    # Use floats for smooth scaling to prevent integer step-function variance spikes
+    shrubs_per_cluster_float = np.interp(target_bg, [0, 100], [2.0, 10.0])
+    num_parents = max(1, int(num_large / shrubs_per_cluster_float)) if num_large > 0 else 0
     
     large_mask = np.zeros((grid_size, grid_size), dtype=bool)
     small_mask = np.zeros((grid_size, grid_size), dtype=bool)
@@ -149,7 +149,6 @@ def process_simulation_iteration(task):
         is_woody_parent = np.random.rand(num_parents) <= prob_dark
 
         if num_large > 0:
-            # Vectorize RNG generation outside of the loop
             r_large_arr = np.random.uniform(r_large_bnds[0], r_large_bnds[1], num_large)
             parent_indices = np.random.randint(0, num_parents, num_large)
             cx_arr = np.random.normal(px_arr[parent_indices], cluster_spread)
@@ -200,8 +199,8 @@ def process_simulation_iteration(task):
 
     # 2. Small Shrubs: Thomas Cluster
     if num_small > 0:
-        shrubs_per_cluster_small = int(np.interp(target_bg, [0, 100], [5, 20]))
-        num_parents_small = max(1, num_small // shrubs_per_cluster_small)
+        shrubs_per_cluster_small_float = np.interp(target_bg, [0, 100], [5.0, 20.0])
+        num_parents_small = max(1, int(num_small / shrubs_per_cluster_small_float))
         cluster_spread_small = cluster_spread * 0.80 
 
         if num_parents_small > 0:
@@ -211,7 +210,6 @@ def process_simulation_iteration(task):
             px_arr_s = r_parents_s * np.cos(theta_parents_s)
             py_arr_s = r_parents_s * np.sin(theta_parents_s)
 
-            # Vectorize RNG generation outside of the loop
             r_small_arr = np.random.uniform(r_small_bnds[0], r_small_bnds[1], num_small)
             parent_indices_s = np.random.randint(0, num_parents_small, num_small)
             cx_arr_s = np.random.normal(px_arr_s[parent_indices_s], cluster_spread_small)
@@ -257,7 +255,6 @@ def process_simulation_iteration(task):
     main_array[large_mask] = large_shrub_value
 
     target_bare_pixels = int(total_valid_pixels * (target_bg / 100.0))
-    # OPTIMIZATION: count_nonzero for Booleans
     current_bare_pixels = np.count_nonzero((main_array == target_value) & valid_mask)
     pixels_to_punch = target_bare_pixels - current_bare_pixels
     
@@ -312,7 +309,6 @@ def process_simulation_iteration(task):
     
     all_exhaust_gaps = np.concatenate([row_gaps, col_gaps])
     
-    # Gap calculations remain np.sum because we are summing actual lengths in meters, not counting True/False.
     ex_0_24 = (np.sum(all_exhaust_gaps[all_exhaust_gaps < 0.25]) / total_exhaust_length_m) * 100
     ex_25_50 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.25) & (all_exhaust_gaps <= 0.50)]) / total_exhaust_length_m) * 100
     ex_51_100 = (np.sum(all_exhaust_gaps[(all_exhaust_gaps >= 0.51) & (all_exhaust_gaps <= 1.00)]) / total_exhaust_length_m) * 100
@@ -349,7 +345,6 @@ def process_simulation_iteration(task):
             sampled_herb = (np.count_nonzero(valid_pixels == small_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
             sampled_woody = (np.count_nonzero(valid_pixels == large_shrub_value) / total_nri_pixels) * 100 if total_nri_pixels > 0 else 0.0
         else:
-            # OPTIMIZATION: Native NumPy concatenate
             sampled_pixels_arr = np.concatenate([t[:-1:step] for t in all_nri_transects])
             valid_sampled_arr = sampled_pixels_arr[sampled_pixels_arr != -9999] 
             total_valid_sampled = len(valid_sampled_arr)
@@ -400,8 +395,6 @@ if __name__ == '__main__':
         for _ in range(iters_per_bin):
             tasks.append((target_bg, plot_radius, hub_radius, cell_size))
             
-    # SHUFFLE TASKS: Distributes slow (low BG) and fast (high BG) iterations 
-    # equally across cores to ensure greedy, perfectly balanced multiprocessing.
     np.random.shuffle(tasks)
             
     total_tasks = len(tasks)
@@ -417,7 +410,7 @@ if __name__ == '__main__':
 
     results = []
     
-    # OPTIMIZATION REVERTED: Small chunks prevent RAM overload with massive spatial arrays
+    # OPTIMIZATION REVERTED: Small chunks prevent RAM overload
     optimal_chunksize = 1
     
     with concurrent.futures.ProcessPoolExecutor(max_workers=cores, 
@@ -662,7 +655,6 @@ if __name__ == '__main__':
         ax_val.set_ylabel(title, fontsize=16, weight='bold') 
         ax_val.grid(True, alpha=0.3)
         
-        # Determine legend placement based on whether the data trends up or down
         last_var_base = f'{prefix}_{scales[-1]}'
         start_val = mae_df[f'{last_var_base}_Val'].iloc[0]
         end_val = mae_df[f'{last_var_base}_Val'].iloc[-1]
