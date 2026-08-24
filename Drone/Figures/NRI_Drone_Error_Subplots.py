@@ -291,7 +291,7 @@ plt.rcParams.update({
 })
 
 fig2, axes2 = plt.subplots(2, 5, figsize=(11, 5))
-fig2.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=20, weight='bold')
+fig2.suptitle("Drone Imagery Metrics vs True Bare Ground (%)", fontsize=17, weight='bold', y=1.05)
 
 for idx, (prefix, title, scales, col_color) in enumerate(plot_config_2):
     row = idx // 5
