@@ -158,7 +158,7 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
     return return_data, lines, labels
 
 
-# --- HELPER FUNCTION FOR BGR SUBSET PLOTTING (5TH & 8TH FIGURES) ---
+# --- HELPER FUNCTION FOR SUBSET PLOTTING (5TH & 8TH FIGURES) ---
 def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
     # Dynamic styling arrays to handle independent metric bins (BGR, HP, WP)
     colors = ['tab:blue', 'tab:orange', 'tab:green']
@@ -338,14 +338,14 @@ def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, l
 
 
 # --- HELPER TO BUILD MASTER LEGEND ---
-def build_master_legend(legend_ax, all_lines, all_labels):
+def build_master_legend(legend_ax, all_lines, all_labels, num_cols=1):
     handles_dict = {}
     for l, lbl in zip(all_lines, all_labels):
         if lbl not in handles_dict:
             handles_dict[lbl] = l
             
     legend_ax.axis('off')
-    legend_ax.legend(handles_dict.values(), handles_dict.keys(), loc='center right', fontsize=16, frameon=True, borderpad=1.5, title="Metric Legend", title_fontsize=18)
+    legend_ax.legend(handles_dict.values(), handles_dict.keys(), loc='center right', ncol=num_cols, fontsize=16, frameon=True, borderpad=1.5, title="Metric Legend", title_fontsize=18)
 
 
 # --- GENERATE INITIAL 3 FIGURES ---
@@ -598,9 +598,9 @@ if '110m_NRI' in csv_files:
         master_lines_sub.extend(l)
 
     master_labels_sub = [line.get_label() for line in master_lines_sub]
-    build_master_legend(axes_sub[0, 1], master_lines_sub, master_labels_sub)
+    build_master_legend(axes_sub[0, 1], master_lines_sub, master_labels_sub, num_cols=2)
     
-    fig_sub.suptitle('Independent Subset Convergence Summary (110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
+    fig_sub.suptitle('Cover Subset Convergence Summary (110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
     fig_sub.tight_layout(rect=[0, 0.03, 1, 0.95], pad=2.5)  
 
     subset_img_path = os.path.join(out_folder, '110m_NRI_Subset_Summary.svg')
@@ -921,9 +921,9 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
         master_lines_sub8.extend(l)
 
     master_labels_sub8 = [line.get_label() for line in master_lines_sub8]
-    build_master_legend(axes_sub8[0, 1], master_lines_sub8, master_labels_sub8)
+    build_master_legend(axes_sub8[0, 1], master_lines_sub8, master_labels_sub8, num_cols=2)
     
-    fig_sub8.suptitle('Independent Subset Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    fig_sub8.suptitle('Cover Subset Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
     fig_sub8.tight_layout(rect=[0, 0.03, 1, 0.96], pad=2.5)  
 
     subset_img_path8 = os.path.join(out_folder, '110m_NRI_RandomLines_Subset_Summary.svg')
