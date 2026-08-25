@@ -29,77 +29,77 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
     color_mae = 'tab:red'
     color_rel = 'tab:blue'
     color_fit_main = 'black'
-  
+    
     axis_font_color = color_mae if plot_secondary else 'black'
-  
+    
     ax.set_title(title, fontsize=18, fontweight='bold')
     ax.set_xlabel(x_label, fontsize=16)
-  
+    
     ax.set_ylabel(y_label, color=axis_font_color, fontsize=16)
-  
+    
     l1 = ax.plot(x_vals, mae_errs, marker='s', linestyle='-', color=color_mae, alpha=0.4, label=mae_label)
     ax.tick_params(axis='y', labelcolor=axis_font_color, labelsize=14)
     ax.tick_params(axis='x', labelsize=14)
-  
+    
     return_data = {'eq_text': "Fit Failed", 'params': None}
-  
+    
     x_arr = np.array(x_vals, dtype=float)
     y_arr = np.array(mae_errs, dtype=float)
-  
+    
     valid_mask = ~np.isnan(y_arr) & ~np.isnan(x_arr)
     x_valid = x_arr[valid_mask]
     y_valid = y_arr[valid_mask]
-  
+    
     fit_mask = x_valid >= 5
     x_fit = x_valid[fit_mask]
     y_fit = y_valid[fit_mask]
-  
+    
     l2, l_extra = [], []
     y_min_zoom, y_max_zoom = np.inf, -np.inf
-  
+    
     if len(y_fit) > 0:
         y_min_zoom = min(y_min_zoom, np.min(y_fit))
         y_max_zoom = max(y_max_zoom, np.max(y_fit))
-  
+    
     if len(x_fit) >= 3:
         try:
             p0 = [np.max(y_fit), 0.5, np.min(y_fit)]
             bounds = ([-np.inf, 0.01, -np.inf], [np.inf, 5.0, np.inf])
-          
+            
             params, _ = curve_fit(power_law, x_fit, y_fit, p0=p0, bounds=bounds, maxfev=10000)
             a, b, c = params
-          
+            
             x_smooth = np.geomspace(np.min(x_fit), np.max(x_fit), 200)
             y_smooth = power_law(x_smooth, a, b, c)
-          
+            
             main_fit_label = r'Power Law Fit ($x \geq 5$)' if combined_fits is None else r'Fit: 110m NRI'
             l2 = ax.plot(x_smooth, y_smooth, linestyle='--', color=color_fit_main, linewidth=2, label=main_fit_label)
-          
+            
             y_pred = power_law(x_fit, a, b, c)
             ss_res = np.sum((y_fit - y_pred) ** 2)
             ss_tot = np.sum((y_fit - np.mean(y_fit)) ** 2)
             r2 = 1 - (ss_res / ss_tot)
-          
+            
             r2_str = ">0.999" if r2 > 0.999 else f"{r2:.3f}"
-          
+            
             eq_text_return = fr'$y = {a:.2f}x^{{-{b:.2f}}} + {c:.2f} \ \ \ (R^2 = {r2_str})$'
             return_data = {'eq_text': eq_text_return, 'params': (a, b, c, np.min(x_fit), np.max(x_fit))}
-          
+            
             if extra_curves is not None:
                 extra_colors = {'10m_Grid': 'tab:green', '30m_Grid': 'tab:orange'}
                 extra_styles = {'10m_Grid': ':', '30m_Grid': '-.'}
-              
+                
                 for scale_key, p_tuple in extra_curves.items():
                     if p_tuple is not None:
                         ea, eb, ec, ex_min, ex_max = p_tuple
                         ex_smooth = np.geomspace(ex_min, ex_max, 200)
                         ey_smooth = power_law(ex_smooth, ea, eb, ec)
-                      
+                        
                         mask_zoom = ex_smooth >= 5
                         if np.any(mask_zoom):
                             y_min_zoom = min(y_min_zoom, np.min(ey_smooth[mask_zoom]))
                             y_max_zoom = max(y_max_zoom, np.max(ey_smooth[mask_zoom]))
-                          
+                            
                         lbl = scale_key.replace('_', ' ')
                         l_extra += ax.plot(ex_smooth, ey_smooth, 
                                          linestyle=extra_styles.get(scale_key, '-'), 
@@ -109,7 +109,7 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
             if combined_fits is not None:
                 eq_10 = combined_fits['10m_Grid'].get(title, "N/A")
                 eq_30 = combined_fits['30m_Grid'].get(title, "N/A")
-              
+                
                 display_text = (
                     r'$\bf{10m:}$ ' + eq_10 + '\n' +
                     r'$\bf{30m:}$ ' + eq_30 + '\n' +
@@ -117,16 +117,16 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
                 )
             else:
                 display_text = fr'$y = {a:.2f}x^{{-{b:.2f}}} + {c:.2f}$' + '\n' + fr'$R^2 = {r2_str}$'
-              
+                
             ax.text(0.95, 0.95, display_text, transform=ax.transAxes, fontsize=14,
                   verticalalignment='top', horizontalalignment='right',
                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
-          
+            
         except Exception as e:
             print(f"Warning: Could not fit curve for {title} - {e}")
 
     ax.set_xscale('log')
-  
+    
     if zoom_to_fit:
         filtered_x_vals = [x for x in x_vals if x >= 5]
         ax.set_xticks(filtered_x_vals)
@@ -136,7 +136,7 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
     else:
         ax.set_xticks(x_vals)
         ax.set_xticklabels([str(x) for x in x_vals], rotation=45)
-      
+        
     ax.grid(True, which="major", ls="--", alpha=0.5)
 
     if zoom_to_fit and y_min_zoom != np.inf and y_max_zoom != -np.inf:
@@ -154,14 +154,15 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
 
     lines = l1 + l3 + l_extra + l2 
     labels = [l.get_label() for l in lines]
-  
+    
     return return_data, lines, labels
 
 
 # --- HELPER FUNCTION FOR BGR SUBSET PLOTTING (5TH & 8TH FIGURES) ---
 def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
-    color_map = {'0-17.5% BGR': 'tab:blue', '17.5-35% BGR': 'tab:orange', '>35% BGR': 'tab:green'}
-    style_map = {'0-17.5% BGR': '-', '17.5-35% BGR': '--', '>35% BGR': '-.'}
+    # Dynamic styling arrays to handle independent metric bins (BGR, HP, WP)
+    colors = ['tab:blue', 'tab:orange', 'tab:green']
+    styles = ['-', '--', '-.']
     
     ax.set_title(title, fontsize=18, fontweight='bold')
     ax.set_xlabel(x_label, fontsize=16)
@@ -175,9 +176,9 @@ def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
     y_min_zoom = np.inf
     y_max_zoom = -np.inf
     
-    for subset_name, mae_errs in mae_dict.items():
-        c = color_map[subset_name]
-        ls = style_map[subset_name]
+    for i, (subset_name, mae_errs) in enumerate(mae_dict.items()):
+        c = colors[i % len(colors)]
+        ls = styles[i % len(styles)]
         
         ax.plot(x_vals, mae_errs, marker='s', linestyle='', color=c, alpha=0.3)
         
@@ -345,6 +346,7 @@ def build_master_legend(legend_ax, all_lines, all_labels):
             
     legend_ax.axis('off')
     legend_ax.legend(handles_dict.values(), handles_dict.keys(), loc='center right', fontsize=16, frameon=True, borderpad=1.5, title="Metric Legend", title_fontsize=18)
+
 
 # --- GENERATE INITIAL 3 FIGURES ---
 gap_cats = {
@@ -519,84 +521,86 @@ if '110m_NRI' in data_cache:
     print(f"Saved summary figure to: {summary_img_path}")
 
 
-# --- GENERATE 5TH BGR SUBSET SUMMARY FIGURE ---
+# --- GENERATE 5TH FIGURE: SUBSET SUMMARY (POINTS) ---
 if '110m_NRI' in csv_files:
-    print(f"\n--- Generating 5th BGR Subset Summary Plot (110m NRI Base) ---")
+    print(f"\n--- Generating 5th Subset Summary Plot (110m NRI Base) ---")
     
     df_110 = pd.read_csv(os.path.join(data_folder, csv_files['110m_NRI']))
     
-    subset_masks = {
+    # Define independent subset masks for BGR, Herbaceous, and Woody cover
+    bgr_masks = {
         '0-17.5% BGR': df_110['BGR_Exact'] <= 17.5,
         '17.5-35% BGR': (df_110['BGR_Exact'] > 17.5) & (df_110['BGR_Exact'] <= 35.0),
         '>35% BGR': df_110['BGR_Exact'] > 35.0
     }
     
-    s_data = {s: {'bgr_mae': [], 'herb_mae': [], 'woody_mae': [], 'fetch_mae': [], 'gap_data': {cat: {'mae': []} for cat in gap_keys}} for s in subset_masks}
+    hp_masks = {
+        '<40% HP': df_110['Herb_Pct_Exact'] < 40.0,
+        '40-60% HP': (df_110['Herb_Pct_Exact'] >= 40.0) & (df_110['Herb_Pct_Exact'] <= 60.0),
+        '>60% HP': df_110['Herb_Pct_Exact'] > 60.0
+    }
+    
+    wp_masks = {
+        '<22.5% WP': df_110['Woody_Pct_Exact'] < 22.5,
+        '22.5-42.5% WP': (df_110['Woody_Pct_Exact'] >= 22.5) & (df_110['Woody_Pct_Exact'] <= 42.5),
+        '>42.5% WP': df_110['Woody_Pct_Exact'] > 42.5
+    }
     
     c_points = data_cache['110m_NRI']['points']
     c_lines = data_cache['110m_NRI']['lines']
     
-    for s_name, mask in subset_masks.items():
-        sub_df = df_110[mask]
-        
-        for pt in c_points:
-            s_data[s_name]['bgr_mae'].append(np.abs(sub_df[f'BGR_pt_{pt}'] - sub_df['BGR_Exact']).mean())
-            
-            h_col = f'Herb_Pct_pt_{pt}'
-            if h_col in sub_df.columns and 'Herb_Pct_Exact' in sub_df.columns:
-                s_data[s_name]['herb_mae'].append(np.abs(sub_df[h_col] - sub_df['Herb_Pct_Exact']).mean())
-            else:
-                s_data[s_name]['herb_mae'].append(np.nan)
-                
-            w_col = f'Woody_Pct_pt_{pt}'
-            if w_col in sub_df.columns and 'Woody_Pct_Exact' in sub_df.columns:
-                s_data[s_name]['woody_mae'].append(np.abs(sub_df[w_col] - sub_df['Woody_Pct_Exact']).mean())
-            else:
-                s_data[s_name]['woody_mae'].append(np.nan)
-                
-            f_col = f'Fetch_pt_{pt}'
-            s_data[s_name]['fetch_mae'].append(np.abs(sub_df[f_col] - sub_df['Fetch_Exact']).mean())
+    # Helper to compute the MAE dictionary for a specific metric across provided masks
+    def compute_mae_dict_5(masks, col_prefix, exact_col, x_vals):
+        mae_dict = {}
+        for s_name, mask in masks.items():
+            sub_df = df_110[mask]
+            maes = []
+            for x in x_vals:
+                col = f'{col_prefix}{x}'
+                if col in sub_df.columns and exact_col in sub_df.columns:
+                    maes.append(np.abs(sub_df[col] - sub_df[exact_col]).mean())
+                else:
+                    maes.append(np.nan)
+            mae_dict[s_name] = maes
+        return mae_dict
 
-        for cat in gap_keys:
-            exact_col = f'{cat}_Exact'
-            for ln in c_lines:
-                l_col = f'{cat}_L_{ln}'
-                s_data[s_name]['gap_data'][cat]['mae'].append(np.abs(sub_df[l_col] - sub_df[exact_col]).mean())
+    # Compute error distributions utilizing their native spatial masks
+    bgr_mae_dict = compute_mae_dict_5(bgr_masks, 'BGR_pt_', 'BGR_Exact', c_points)
+    herb_mae_dict = compute_mae_dict_5(hp_masks, 'Herb_Pct_pt_', 'Herb_Pct_Exact', c_points)
+    woody_mae_dict = compute_mae_dict_5(wp_masks, 'Woody_Pct_pt_', 'Woody_Pct_Exact', c_points)
+    fetch_mae_dict = compute_mae_dict_5(bgr_masks, 'Fetch_pt_', 'Fetch_Exact', c_points)
 
     fig_sub, axes_sub = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
     master_lines_sub = []
     
-    def get_subset_dict(metric_type, is_gap=False, gap_cat=None):
-        out = {}
-        for s in subset_masks.keys():
-            if is_gap:
-                out[s] = s_data[s]['gap_data'][gap_cat]['mae']
-            else:
-                out[s] = s_data[s][metric_type]
-        return out
-
-    l = plot_subset_convergence(axes_sub[0, 0], c_points, get_subset_dict('bgr_mae'), 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot BGR
+    l = plot_subset_convergence(axes_sub[0, 0], c_points, bgr_mae_dict, 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    l = plot_subset_convergence(axes_sub[1, 0], c_points, get_subset_dict('herb_mae'), 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot Herbaceous
+    l = plot_subset_convergence(axes_sub[1, 0], c_points, herb_mae_dict, 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    l = plot_subset_convergence(axes_sub[1, 1], c_points, get_subset_dict('woody_mae'), 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot Woody
+    l = plot_subset_convergence(axes_sub[1, 1], c_points, woody_mae_dict, 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    l = plot_subset_convergence(axes_sub[2, 0], c_points, get_subset_dict('fetch_mae'), 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
+    # Plot Fetch
+    l = plot_subset_convergence(axes_sub[2, 0], c_points, fetch_mae_dict, 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_sub.extend(l)
     
+    # Plot Canopy Gaps
     for i, cat in enumerate(gap_keys):
         r, c = gap_coords[i]
         cat_title = gap_cats[cat]
-        l = plot_subset_convergence(axes_sub[r, c], c_lines, get_subset_dict('gap_data', is_gap=True, gap_cat=cat), cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
+        gap_mae_dict = compute_mae_dict_5(bgr_masks, f'{cat}_L_', f'{cat}_Exact', c_lines)
+        l = plot_subset_convergence(axes_sub[r, c], c_lines, gap_mae_dict, cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
         master_lines_sub.extend(l)
 
     master_labels_sub = [line.get_label() for line in master_lines_sub]
     build_master_legend(axes_sub[0, 1], master_lines_sub, master_labels_sub)
     
-    fig_sub.suptitle('Convergence Summary Across BGR Subsets (110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
+    fig_sub.suptitle('Independent Subset Convergence Summary (110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
     fig_sub.tight_layout(rect=[0, 0.03, 1, 0.95], pad=2.5)  
 
     subset_img_path = os.path.join(out_folder, '110m_NRI_Subset_Summary.svg')
@@ -783,6 +787,7 @@ for scale_name, csv_filename in rl_csv_files.items():
         
     plt.close(fig_temp)
 
+
 # --- GENERATE 7TH FIGURE: CROSS-SCALE SUMMARY (RANDOM LINES) ---
 if '110m_NRI' in data_cache_rl:
     print(f"\n--- Generating 7th Cross-Scale Summary Plot (1m Interval Random Lines mapped to 110m NRI Base) ---")
@@ -837,85 +842,88 @@ if '110m_NRI' in data_cache_rl:
     plt.close() 
     print(f"Saved cross-scale summary figure 7 to: {summary_img_path7}")
 
-# --- GENERATE 8TH FIGURE: BGR SUBSET SUMMARY (RANDOM LINES) ---
+
+# --- GENERATE 8TH FIGURE: SUBSET SUMMARY (RANDOM LINES) ---
 rl_csv_path_110 = os.path.join(data_folder, 'SRER_NRI_Plots_110m_RandomLines.csv')
 if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
-    print(f"\n--- Generating 8th BGR Subset Summary Plot (1m Interval Random Lines, 110m NRI Base) ---")
+    print(f"\n--- Generating 8th Subset Summary Plot (1m Interval Random Lines, 110m NRI Base) ---")
     
     df_110_rl = pd.read_csv(rl_csv_path_110)
     
-    subset_masks_rl = {
+    # Define independent subset masks for BGR, Herbaceous, and Woody cover
+    bgr_masks = {
         '0-17.5% BGR': df_110_rl['BGR_Exact'] <= 17.5,
         '17.5-35% BGR': (df_110_rl['BGR_Exact'] > 17.5) & (df_110_rl['BGR_Exact'] <= 35.0),
         '>35% BGR': df_110_rl['BGR_Exact'] > 35.0
     }
     
-    s_data_rl = {s: {'bgr_mae': [], 'herb_mae': [], 'woody_mae': [], 'fetch_mae': [], 'gap_data': {cat: {'mae': []} for cat in gap_keys}} for s in subset_masks_rl}
+    hp_masks = {
+        '<40% HP': df_110_rl['Herb_Pct_Exact'] < 40.0,
+        '40-60% HP': (df_110_rl['Herb_Pct_Exact'] >= 40.0) & (df_110_rl['Herb_Pct_Exact'] <= 60.0),
+        '>60% HP': df_110_rl['Herb_Pct_Exact'] > 60.0
+    }
+    
+    wp_masks = {
+        '<22.5% WP': df_110_rl['Woody_Pct_Exact'] < 22.5,
+        '22.5-42.5% WP': (df_110_rl['Woody_Pct_Exact'] >= 22.5) & (df_110_rl['Woody_Pct_Exact'] <= 42.5),
+        '>42.5% WP': df_110_rl['Woody_Pct_Exact'] > 42.5
+    }
     
     c_points_rl = data_cache_rl['110m_NRI']['points']
     c_lines_rl = data_cache_rl['110m_NRI']['lines']
     
-    for s_name, mask in subset_masks_rl.items():
-        sub_df = df_110_rl[mask]
-        
-        for pt in c_points_rl:
-            s_data_rl[s_name]['bgr_mae'].append(np.abs(sub_df[f'BGR_pt_{pt}'] - sub_df['BGR_Exact']).mean())
-            
-            h_col = f'Herb_Pct_pt_{pt}'
-            if h_col in sub_df.columns and 'Herb_Pct_Exact' in sub_df.columns:
-                s_data_rl[s_name]['herb_mae'].append(np.abs(sub_df[h_col] - sub_df['Herb_Pct_Exact']).mean())
-            else:
-                s_data_rl[s_name]['herb_mae'].append(np.nan)
-                
-            w_col = f'Woody_Pct_pt_{pt}'
-            if w_col in sub_df.columns and 'Woody_Pct_Exact' in sub_df.columns:
-                s_data_rl[s_name]['woody_mae'].append(np.abs(sub_df[w_col] - sub_df['Woody_Pct_Exact']).mean())
-            else:
-                s_data_rl[s_name]['woody_mae'].append(np.nan)
-                
-            f_col = f'Fetch_pt_{pt}'
-            s_data_rl[s_name]['fetch_mae'].append(np.abs(sub_df[f_col] - sub_df['Fetch_Exact']).mean())
+    # Helper to compute the MAE dictionary for a specific metric across provided masks
+    def compute_mae_dict(masks, col_prefix, exact_col, x_vals):
+        mae_dict = {}
+        for s_name, mask in masks.items():
+            sub_df = df_110_rl[mask]
+            maes = []
+            for x in x_vals:
+                col = f'{col_prefix}{x}'
+                if col in sub_df.columns and exact_col in sub_df.columns:
+                    maes.append(np.abs(sub_df[col] - sub_df[exact_col]).mean())
+                else:
+                    maes.append(np.nan)
+            mae_dict[s_name] = maes
+        return mae_dict
 
-        for cat in gap_keys:
-            exact_col = f'{cat}_Exact'
-            for ln in c_lines_rl:
-                l_col = f'{cat}_L_{ln}'
-                s_data_rl[s_name]['gap_data'][cat]['mae'].append(np.abs(sub_df[l_col] - sub_df[exact_col]).mean())
+    # Compute error distributions utilizing their native spatial masks
+    bgr_mae_dict = compute_mae_dict(bgr_masks, 'BGR_pt_', 'BGR_Exact', c_points_rl)
+    herb_mae_dict = compute_mae_dict(hp_masks, 'Herb_Pct_pt_', 'Herb_Pct_Exact', c_points_rl)
+    woody_mae_dict = compute_mae_dict(wp_masks, 'Woody_Pct_pt_', 'Woody_Pct_Exact', c_points_rl)
+    fetch_mae_dict = compute_mae_dict(bgr_masks, 'Fetch_pt_', 'Fetch_Exact', c_points_rl)
 
     fig_sub8, axes_sub8 = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
     master_lines_sub8 = []
     
-    def get_subset_dict_rl(metric_type, is_gap=False, gap_cat=None):
-        out = {}
-        for s in subset_masks_rl.keys():
-            if is_gap:
-                out[s] = s_data_rl[s]['gap_data'][gap_cat]['mae']
-            else:
-                out[s] = s_data_rl[s][metric_type]
-        return out
-
-    l = plot_subset_convergence(axes_sub8[0, 0], c_points_rl, get_subset_dict_rl('bgr_mae'), 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot BGR
+    l = plot_subset_convergence(axes_sub8[0, 0], c_points_rl, bgr_mae_dict, 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    l = plot_subset_convergence(axes_sub8[1, 0], c_points_rl, get_subset_dict_rl('herb_mae'), 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot Herbaceous
+    l = plot_subset_convergence(axes_sub8[1, 0], c_points_rl, herb_mae_dict, 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    l = plot_subset_convergence(axes_sub8[1, 1], c_points_rl, get_subset_dict_rl('woody_mae'), 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
+    # Plot Woody
+    l = plot_subset_convergence(axes_sub8[1, 1], c_points_rl, woody_mae_dict, 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    l = plot_subset_convergence(axes_sub8[2, 0], c_points_rl, get_subset_dict_rl('fetch_mae'), 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
+    # Plot Fetch
+    l = plot_subset_convergence(axes_sub8[2, 0], c_points_rl, fetch_mae_dict, 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_sub8.extend(l)
     
+    # Plot Canopy Gaps
     for i, cat in enumerate(gap_keys):
         r, c = gap_coords[i]
         cat_title = gap_cats[cat]
-        l = plot_subset_convergence(axes_sub8[r, c], c_lines_rl, get_subset_dict_rl('gap_data', is_gap=True, gap_cat=cat), cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
+        gap_mae_dict = compute_mae_dict(bgr_masks, f'{cat}_L_', f'{cat}_Exact', c_lines_rl)
+        l = plot_subset_convergence(axes_sub8[r, c], c_lines_rl, gap_mae_dict, cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
         master_lines_sub8.extend(l)
 
     master_labels_sub8 = [line.get_label() for line in master_lines_sub8]
     build_master_legend(axes_sub8[0, 1], master_lines_sub8, master_labels_sub8)
     
-    fig_sub8.suptitle('BGR Subset Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
+    fig_sub8.suptitle('Independent Subset Convergence Summary: 1m Interval Lines (110m NRI Base)', fontsize=24, fontweight='bold', y=0.98)
     fig_sub8.tight_layout(rect=[0, 0.03, 1, 0.96], pad=2.5)  
 
     subset_img_path8 = os.path.join(out_folder, '110m_NRI_RandomLines_Subset_Summary.svg')
