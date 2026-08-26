@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import os
 from scipy.optimize import curve_fit
 
+# --- DIRECTORIES & SETUP ---
 data_folder = r'C:\Users\andre\ScatterPlots'
 out_folder = r'C:\Users\andre\ScatterPlots\Random_Sampling'
 
@@ -20,9 +21,21 @@ fit_results = {'10m_Grid': {}, '30m_Grid': {}, '110m_NRI': {}}
 fit_params = {'10m_Grid': {}, '30m_Grid': {}, '110m_NRI': {}}
 data_cache = {}
 
+gap_cats = {
+    'Gap_0_24': 'Canopy Gap: 0-24 cm',
+    'Gap_25_50': 'Canopy Gap: 25-50 cm',
+    'Gap_51_100': 'Canopy Gap: 51-100 cm',
+    'Gap_101_200': 'Canopy Gap: 101-200 cm',
+    'Gap_gt_200': 'Canopy Gap: >200 cm'
+}
+gap_keys = list(gap_cats.keys())
+gap_coords = [(2, 1), (3, 0), (3, 1), (4, 0), (4, 1)]
+
+
 # --- POWER LAW FUNCTION ---
 def power_law(x, a, b, c):
     return a * np.power(x, -b) + c
+
 
 # --- HELPER FUNCTION FOR STANDARD PLOTTING ---
 def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_label, combined_fits=None, plot_secondary=True, extra_curves=None, mae_label='Absolute Error', zoom_to_fit=False):
@@ -34,7 +47,6 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
     
     ax.set_title(title, fontsize=18, fontweight='bold')
     ax.set_xlabel(x_label, fontsize=16)
-    
     ax.set_ylabel(y_label, color=axis_font_color, fontsize=16)
     
     l1 = ax.plot(x_vals, mae_errs, marker='s', linestyle='-', color=color_mae, alpha=0.4, label=mae_label)
@@ -158,9 +170,8 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
     return return_data, lines, labels
 
 
-# --- HELPER FUNCTION FOR SUBSET PLOTTING (5TH & 8TH FIGURES) ---
+# --- HELPER FUNCTION FOR SUBSET PLOTTING ---
 def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
-    # Dynamic styling arrays to handle independent metric bins (BGR, HP, WP)
     colors = ['tab:blue', 'tab:orange', 'tab:green']
     styles = ['-', '--', '-.']
     
@@ -247,7 +258,7 @@ def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
     return all_lines
 
 
-# --- HELPER TO OVERLAY COMPARISON FITS (6TH FIGURE) ---
+# --- HELPER TO OVERLAY COMPARISON FITS ---
 def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, label_lines, title, x_label, y_label):
     ax.set_title(title, fontsize=18, fontweight='bold')
     ax.set_xlabel(x_label, fontsize=16)
@@ -348,17 +359,9 @@ def build_master_legend(legend_ax, all_lines, all_labels, num_cols=1):
     legend_ax.legend(handles_dict.values(), handles_dict.keys(), loc='center right', ncol=num_cols, fontsize=16, frameon=True, borderpad=1.5, title="Metric Legend", title_fontsize=18)
 
 
-# --- GENERATE INITIAL 3 FIGURES ---
-gap_cats = {
-    'Gap_0_24': 'Canopy Gap: 0-24 cm',
-    'Gap_25_50': 'Canopy Gap: 25-50 cm',
-    'Gap_51_100': 'Canopy Gap: 51-100 cm',
-    'Gap_101_200': 'Canopy Gap: 101-200 cm',
-    'Gap_gt_200': 'Canopy Gap: >200 cm'
-}
-gap_keys = list(gap_cats.keys())
-gap_coords = [(2, 1), (3, 0), (3, 1), (4, 0), (4, 1)]
-
+# =========================================================================================
+# --- GENERATE INITIAL 3 FIGURES (RANDOM POINTS) ---
+# =========================================================================================
 for scale_name, csv_filename in csv_files.items():
   csv_path = os.path.join(data_folder, csv_filename)
   
@@ -466,9 +469,11 @@ for scale_name, csv_filename in csv_files.items():
   print(f"Saved figure to: {output_img_path}")
 
 
-# --- GENERATE 4TH SUMMARY FIGURE ---
+# =========================================================================================
+# --- GENERATE 4TH SUMMARY FIGURE (POINTS) ---
+# =========================================================================================
 if '110m_NRI' in data_cache:
-    print(f"\n--- Generating 4th Cross-Scale Summary Plot (110m NRI Base) ---")
+    print(f"\n--- Generating Cross-Scale Summary Plot (110m NRI Base) ---")
     c_data = data_cache['110m_NRI']
     
     fig, axes = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
@@ -521,13 +526,14 @@ if '110m_NRI' in data_cache:
     print(f"Saved summary figure to: {summary_img_path}")
 
 
+# =========================================================================================
 # --- GENERATE 5TH FIGURE: SUBSET SUMMARY (POINTS) ---
+# =========================================================================================
 if '110m_NRI' in csv_files:
-    print(f"\n--- Generating 5th Subset Summary Plot (110m NRI Base) ---")
+    print(f"\n--- Generating Subset Summary Plot (110m NRI Base) ---")
     
     df_110 = pd.read_csv(os.path.join(data_folder, csv_files['110m_NRI']))
     
-    # Define independent subset masks for BGR, Herbaceous, and Woody cover
     bgr_masks = {
         '0-17.5% BGR': df_110['BGR_Exact'] <= 17.5,
         '17.5-35% BGR': (df_110['BGR_Exact'] > 17.5) & (df_110['BGR_Exact'] <= 35.0),
@@ -549,7 +555,6 @@ if '110m_NRI' in csv_files:
     c_points = data_cache['110m_NRI']['points']
     c_lines = data_cache['110m_NRI']['lines']
     
-    # Helper to compute the MAE dictionary for a specific metric across provided masks
     def compute_mae_dict_5(masks, col_prefix, exact_col, x_vals):
         mae_dict = {}
         for s_name, mask in masks.items():
@@ -564,7 +569,6 @@ if '110m_NRI' in csv_files:
             mae_dict[s_name] = maes
         return mae_dict
 
-    # Compute error distributions utilizing their native spatial masks
     bgr_mae_dict = compute_mae_dict_5(bgr_masks, 'BGR_pt_', 'BGR_Exact', c_points)
     herb_mae_dict = compute_mae_dict_5(hp_masks, 'Herb_Pct_pt_', 'Herb_Pct_Exact', c_points)
     woody_mae_dict = compute_mae_dict_5(wp_masks, 'Woody_Pct_pt_', 'Woody_Pct_Exact', c_points)
@@ -573,23 +577,18 @@ if '110m_NRI' in csv_files:
     fig_sub, axes_sub = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
     master_lines_sub = []
     
-    # Plot BGR
     l = plot_subset_convergence(axes_sub[0, 0], c_points, bgr_mae_dict, 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    # Plot Herbaceous
     l = plot_subset_convergence(axes_sub[1, 0], c_points, herb_mae_dict, 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    # Plot Woody
     l = plot_subset_convergence(axes_sub[1, 1], c_points, woody_mae_dict, 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub.extend(l)
     
-    # Plot Fetch
     l = plot_subset_convergence(axes_sub[2, 0], c_points, fetch_mae_dict, 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_sub.extend(l)
     
-    # Plot Canopy Gaps
     for i, cat in enumerate(gap_keys):
         r, c = gap_coords[i]
         cat_title = gap_cats[cat]
@@ -609,11 +608,13 @@ if '110m_NRI' in csv_files:
     print(f"Saved subset summary figure to: {subset_img_path}")
 
 
+# =========================================================================================
 # --- GENERATE 6TH FIGURE: PURE RANDOM VS. 1M INTERVAL LINE SAMPLING (2x2 GRID) ---
+# =========================================================================================
 rl_csv_path = os.path.join(data_folder, 'SRER_NRI_Plots_110m_RandomLines.csv')
 
 if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
-    print(f"\n--- Generating 6th Comparison Plot (2x2: BGR, HP, WP, MF) ---")
+    print(f"\n--- Generating Comparison Plot (2x2: BGR, HP, WP, MF) ---")
     
     df_rl = pd.read_csv(rl_csv_path)
     c_data = data_cache['110m_NRI'] 
@@ -640,48 +641,41 @@ if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
     fig_comp, axes_comp = plt.subplots(nrows=2, ncols=2, figsize=(14, 10))
     master_lines_comp, master_labels_comp = [], []
 
-    # Top Left: BGR
     l = plot_comparison_convergence(axes_comp[0, 0], 
                                     c_data['points'], c_data['bgr_mae'], 'Pure Random Points', 
                                     points_rl, bgr_mae_rl, '1m Interval Random Lines', 
                                     'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    # Top Right: Herb
     l = plot_comparison_convergence(axes_comp[0, 1], 
                                     c_data['points'], c_data['herb_mae'], 'Pure Random Points', 
                                     points_rl, herb_mae_rl, '1m Interval Random Lines', 
                                     'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    # Bottom Left: Woody
     l = plot_comparison_convergence(axes_comp[1, 0], 
                                     c_data['points'], c_data['woody_mae'], 'Pure Random Points', 
                                     points_rl, woody_mae_rl, '1m Interval Random Lines', 
                                     'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_comp.extend(l)
     
-    # Bottom Right: Fetch
     l = plot_comparison_convergence(axes_comp[1, 1], 
                                     c_data['points'], c_data['fetch_mae'], 'Pure Random Points', 
                                     points_rl, fetch_mae_rl, '1m Interval Random Lines', 
                                     'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_comp.extend(l)
 
-    # Deduplicate legend items for the figure-level legend
     handles_dict = {}
     for line, label in zip(master_lines_comp, [line.get_label() for line in master_lines_comp]):
         if label not in handles_dict:
             handles_dict[label] = line
             
-    # Add a unified legend to the bottom of the figure
     fig_comp.legend(handles_dict.values(), handles_dict.keys(), 
                     loc='lower center', ncol=2, fontsize=14, frameon=True, borderpad=1.0, 
                     bbox_to_anchor=(0.5, 0.02))
     
     fig_comp.suptitle('Convergence Comparison: Points vs. Random Lines (110m NRI Base)', fontsize=20, fontweight='bold', y=0.96)
     
-    # Adjust layout to prevent title clipping and padding issues
     fig_comp.tight_layout(rect=[0, 0.08, 1, 0.93], pad=2.5)  
 
     comp_img_path = os.path.join(out_folder, '110m_NRI_RandomLine_Comparison.svg')
@@ -690,7 +684,9 @@ if os.path.exists(rl_csv_path) and '110m_NRI' in data_cache:
     print(f"Saved 2x2 comparison figure to: {comp_img_path}")
 
 
-# --- PREPARE DATA FOR 7TH & 8TH FIGURES (RANDOM LINES ACROSS SCALES) ---
+# =========================================================================================
+# --- GENERATE RANDOM LINE CONVERGENCE FIGURES (ACROSS 3 SCALES) ---
+# =========================================================================================
 rl_csv_files = {
   '10m_Grid': 'SRER_Grid_10m_RandomLines.csv',
   '30m_Grid': 'SRER_Grid_30m_RandomLines.csv',
@@ -701,11 +697,12 @@ fit_results_rl = {'10m_Grid': {}, '30m_Grid': {}, '110m_NRI': {}}
 fit_params_rl = {'10m_Grid': {}, '30m_Grid': {}, '110m_NRI': {}}
 data_cache_rl = {}
 
-print(f"\n--- Loading datasets for 7th & 8th Random Line figures ---")
+print(f"\n--- Generating Random Line Convergence Plots for all 3 scales ---")
 
 for scale_name, csv_filename in rl_csv_files.items():
     csv_path = os.path.join(data_folder, csv_filename)
     if not os.path.exists(csv_path):
+        print(f"Skipping {scale_name}: Could not find {csv_path}")
         continue
         
     df_rl_all = pd.read_csv(csv_path)
@@ -718,79 +715,120 @@ for scale_name, csv_filename in rl_csv_files.items():
     ln_cols_rl_all = [c for c in df_rl_all.columns if c.startswith('Gap_0_24_L_')]
     lines_rl_all = sorted([int(c.split('_')[-1]) for c in ln_cols_rl_all])
 
-    bgr_mae, bgr_rel = [], None
-    herb_mae, herb_rel = [], None
-    woody_mae, woody_rel = [], None
-    fetch_mae, fetch_rel = [], None
+    bgr_mae, bgr_rel = [], []
+    herb_mae, herb_rel = [], []
+    woody_mae, woody_rel = [], []
+    fetch_mae, fetch_rel = [], []
 
     for pt in points_rl_all:
+        # BGR Error
         bgr_mae.append(np.abs(df_rl_all[f'BGR_pt_{pt}'] - df_rl_all['BGR_Exact']).mean())
+        bgr_rel.append((np.abs(df_rl_all[f'BGR_pt_{pt}'] - df_rl_all['BGR_Exact']) / (df_rl_all['BGR_Exact'] + 1e-6) * 100).mean())
         
+        # Herbaceous Error
         h_col = f'Herb_Pct_pt_{pt}'
         if h_col in df_rl_all.columns and 'Herb_Pct_Exact' in df_rl_all.columns:
             herb_mae.append(np.abs(df_rl_all[h_col] - df_rl_all['Herb_Pct_Exact']).mean())
+            herb_rel.append((np.abs(df_rl_all[h_col] - df_rl_all['Herb_Pct_Exact']) / (df_rl_all['Herb_Pct_Exact'] + 1e-6) * 100).mean())
         else:
             herb_mae.append(np.nan)
+            herb_rel.append(np.nan)
 
+        # Woody Error
         w_col = f'Woody_Pct_pt_{pt}'
         if w_col in df_rl_all.columns and 'Woody_Pct_Exact' in df_rl_all.columns:
             woody_mae.append(np.abs(df_rl_all[w_col] - df_rl_all['Woody_Pct_Exact']).mean())
+            woody_rel.append((np.abs(df_rl_all[w_col] - df_rl_all['Woody_Pct_Exact']) / (df_rl_all['Woody_Pct_Exact'] + 1e-6) * 100).mean())
         else:
             woody_mae.append(np.nan)
+            woody_rel.append(np.nan)
 
+        # Fetch Error
         f_col = f'Fetch_pt_{pt}'
         fetch_mae.append(np.abs(df_rl_all[f_col] - df_rl_all['Fetch_Exact']).mean())
+        fetch_rel.append((np.abs(df_rl_all[f_col] - df_rl_all['Fetch_Exact']) / (df_rl_all['Fetch_Exact'] + 1e-6) * 100).mean())
         
     gap_data = {}
     for cat, title in gap_cats.items():
-        g_mae = []
+        g_mae, g_rel = [], []
         exact_col = f'{cat}_Exact'
         for ln in lines_rl_all:
             l_col = f'{cat}_L_{ln}'
             g_mae.append(np.abs(df_rl_all[l_col] - df_rl_all[exact_col]).mean())
-        gap_data[cat] = {'title': title, 'mae': g_mae, 'rel': None}
+            g_rel.append((np.abs(df_rl_all[l_col] - df_rl_all[exact_col]) / (df_rl_all[exact_col] + 1e-6) * 100).mean())
+        gap_data[cat] = {'title': title, 'mae': g_mae, 'rel': g_rel}
 
+    # Store all arrays, including MRE, into cache
     data_cache_rl[scale_name] = {
         'points': points_rl_all, 'lines': lines_rl_all,
-        'bgr_mae': bgr_mae, 'bgr_rel': None,
-        'herb_mae': herb_mae, 'herb_rel': None,
-        'woody_mae': woody_mae, 'woody_rel': None,
-        'fetch_mae': fetch_mae, 'fetch_rel': None,
+        'bgr_mae': bgr_mae, 'bgr_rel': bgr_rel,
+        'herb_mae': herb_mae, 'herb_rel': herb_rel,
+        'woody_mae': woody_mae, 'woody_rel': woody_rel,
+        'fetch_mae': fetch_mae, 'fetch_rel': fetch_rel,
         'gap_data': gap_data
     }
 
-    # Generate temporary invisible plot strictly to capture internal fit parameters
-    fig_temp, axes_temp = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
+    # ==========================================
+    # NEW: SPECIAL PRINTOUTS FOR 110m NRI
+    # ==========================================
+    if scale_name == '110m_NRI':
+        print(f"\n[110m NRI Random Lines] Mean Relative Errors at Target Points:")
+        for target_pt in [10, 100, 300, 1000]:
+            if target_pt in points_rl_all:
+                idx = points_rl_all.index(target_pt)
+                print(f"  {target_pt:>4} Points -> BGR: {bgr_rel[idx]:>6.2f}% | Herb: {herb_rel[idx]:>6.2f}% | Woody: {woody_rel[idx]:>6.2f}% | Fetch: {fetch_rel[idx]:>6.2f}%")
+            else:
+                print(f"  {target_pt:>4} Points -> Data not available in dataset")
+    # ==========================================
+
+    fig_rl, axes_rl = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
+    master_lines_rl, master_labels_rl = [], []
     
-    res_bgr, _, _ = plot_error_convergence(axes_temp[0, 0], points_rl_all, bgr_mae, None, 'Bare Ground Percentage', '', '')
+    # Passes relative errors (bgr_rel, herb_rel, etc.) to the plotting function
+    res_bgr, l, lbl = plot_error_convergence(axes_rl[0, 0], points_rl_all, bgr_mae, bgr_rel, 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     fit_results_rl[scale_name]['Bare Ground Percentage'] = res_bgr['eq_text']
     fit_params_rl[scale_name]['Bare Ground Percentage'] = res_bgr['params']
+    master_lines_rl.extend(l); master_labels_rl.extend(lbl)
     
-    res_herb, _, _ = plot_error_convergence(axes_temp[1, 0], points_rl_all, herb_mae, None, 'Herb Cover Percentage', '', '')
+    res_herb, l, lbl = plot_error_convergence(axes_rl[1, 0], points_rl_all, herb_mae, herb_rel, 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     fit_results_rl[scale_name]['Herb Cover Percentage'] = res_herb['eq_text']
     fit_params_rl[scale_name]['Herb Cover Percentage'] = res_herb['params']
+    master_lines_rl.extend(l); master_labels_rl.extend(lbl)
     
-    res_woody, _, _ = plot_error_convergence(axes_temp[1, 1], points_rl_all, woody_mae, None, 'Woody Cover Percentage', '', '')
+    res_woody, l, lbl = plot_error_convergence(axes_rl[1, 1], points_rl_all, woody_mae, woody_rel, 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     fit_results_rl[scale_name]['Woody Cover Percentage'] = res_woody['eq_text']
     fit_params_rl[scale_name]['Woody Cover Percentage'] = res_woody['params']
+    master_lines_rl.extend(l); master_labels_rl.extend(lbl)
     
-    res_fetch, _, _ = plot_error_convergence(axes_temp[2, 0], points_rl_all, fetch_mae, None, 'Mean Fetch', '', '')
+    res_fetch, l, lbl = plot_error_convergence(axes_rl[2, 0], points_rl_all, fetch_mae, fetch_rel, 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     fit_results_rl[scale_name]['Mean Fetch'] = res_fetch['eq_text']
     fit_params_rl[scale_name]['Mean Fetch'] = res_fetch['params']
+    master_lines_rl.extend(l); master_labels_rl.extend(lbl)
     
     for i, cat in enumerate(gap_keys):
         r, c = gap_coords[i]
         cat_title = gap_data[cat]['title']
-        res_gap, _, _ = plot_error_convergence(axes_temp[r, c], lines_rl_all, gap_data[cat]['mae'], None, cat_title, '', '')
+        res_gap, l, lbl = plot_error_convergence(axes_rl[r, c], lines_rl_all, gap_data[cat]['mae'], gap_data[cat]['rel'], cat_title, 'Virtual Transect Length in Meters (Log Scale)', 'Absolute Error (pp)')
         fit_results_rl[scale_name][cat_title] = res_gap['eq_text']
         fit_params_rl[scale_name][cat_title] = res_gap['params']
+        master_lines_rl.extend(l); master_labels_rl.extend(lbl)
         
-    plt.close(fig_temp)
+    build_master_legend(axes_rl[0, 1], master_lines_rl, master_labels_rl)
+
+    fig_rl.suptitle(f'Convergence of Random Line Metrics to Exact Values ({scale_name.replace("_", " ")})', fontsize=28, fontweight='bold', y=0.99)
+    fig_rl.tight_layout(pad=3.0)  
+
+    rl_img_path = os.path.join(out_folder, f'{scale_name}_RandomLines_Convergence.svg')
+    plt.savefig(rl_img_path, format='svg', dpi=300)
+    plt.close() 
+    print(f"Saved Random Lines figure to: {rl_img_path}")
 
 
-# --- GENERATE 7TH FIGURE: CROSS-SCALE SUMMARY (RANDOM LINES) ---
+# =========================================================================================
+# --- GENERATE CROSS-SCALE SUMMARY (RANDOM LINES) ---
+# =========================================================================================
 if '110m_NRI' in data_cache_rl:
-    print(f"\n--- Generating 7th Cross-Scale Summary Plot (1m Interval Random Lines mapped to 110m NRI Base) ---")
+    print(f"\n--- Generating Cross-Scale Summary Plot (1m Interval Random Lines mapped to 110m NRI Base) ---")
     c_data_rl = data_cache_rl['110m_NRI']
     
     fig7, axes7 = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
@@ -840,17 +878,18 @@ if '110m_NRI' in data_cache_rl:
     summary_img_path7 = os.path.join(out_folder, '110m_NRI_RandomLines_CrossScale_Summary.svg')
     plt.savefig(summary_img_path7, format='svg', dpi=300)
     plt.close() 
-    print(f"Saved cross-scale summary figure 7 to: {summary_img_path7}")
+    print(f"Saved cross-scale summary figure to: {summary_img_path7}")
 
 
-# --- GENERATE 8TH FIGURE: SUBSET SUMMARY (RANDOM LINES) ---
+# =========================================================================================
+# --- GENERATE SUBSET SUMMARY (RANDOM LINES) ---
+# =========================================================================================
 rl_csv_path_110 = os.path.join(data_folder, 'SRER_NRI_Plots_110m_RandomLines.csv')
 if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
-    print(f"\n--- Generating 8th Subset Summary Plot (1m Interval Random Lines, 110m NRI Base) ---")
+    print(f"\n--- Generating Subset Summary Plot (1m Interval Random Lines, 110m NRI Base) ---")
     
     df_110_rl = pd.read_csv(rl_csv_path_110)
     
-    # Define independent subset masks for BGR, Herbaceous, and Woody cover
     bgr_masks = {
         '0-17.5% BGR': df_110_rl['BGR_Exact'] <= 17.5,
         '17.5-35% BGR': (df_110_rl['BGR_Exact'] > 17.5) & (df_110_rl['BGR_Exact'] <= 35.0),
@@ -872,7 +911,6 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
     c_points_rl = data_cache_rl['110m_NRI']['points']
     c_lines_rl = data_cache_rl['110m_NRI']['lines']
     
-    # Helper to compute the MAE dictionary for a specific metric across provided masks
     def compute_mae_dict(masks, col_prefix, exact_col, x_vals):
         mae_dict = {}
         for s_name, mask in masks.items():
@@ -887,7 +925,6 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
             mae_dict[s_name] = maes
         return mae_dict
 
-    # Compute error distributions utilizing their native spatial masks
     bgr_mae_dict = compute_mae_dict(bgr_masks, 'BGR_pt_', 'BGR_Exact', c_points_rl)
     herb_mae_dict = compute_mae_dict(hp_masks, 'Herb_Pct_pt_', 'Herb_Pct_Exact', c_points_rl)
     woody_mae_dict = compute_mae_dict(wp_masks, 'Woody_Pct_pt_', 'Woody_Pct_Exact', c_points_rl)
@@ -896,23 +933,18 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
     fig_sub8, axes_sub8 = plt.subplots(nrows=5, ncols=2, figsize=(18, 18))
     master_lines_sub8 = []
     
-    # Plot BGR
     l = plot_subset_convergence(axes_sub8[0, 0], c_points_rl, bgr_mae_dict, 'Bare Ground Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    # Plot Herbaceous
     l = plot_subset_convergence(axes_sub8[1, 0], c_points_rl, herb_mae_dict, 'Herb Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    # Plot Woody
     l = plot_subset_convergence(axes_sub8[1, 1], c_points_rl, woody_mae_dict, 'Woody Cover Percentage', 'Number of Sampled Points (Log Scale)', 'Absolute Error (pp)')
     master_lines_sub8.extend(l)
     
-    # Plot Fetch
     l = plot_subset_convergence(axes_sub8[2, 0], c_points_rl, fetch_mae_dict, 'Mean Fetch', 'Number of Sampled Points (Log Scale)', 'Absolute Error (m)')
     master_lines_sub8.extend(l)
     
-    # Plot Canopy Gaps
     for i, cat in enumerate(gap_keys):
         r, c = gap_coords[i]
         cat_title = gap_cats[cat]
@@ -931,4 +963,4 @@ if os.path.exists(rl_csv_path_110) and '110m_NRI' in data_cache_rl:
     plt.close() 
     print(f"Saved subset summary figure 8 to: {subset_img_path8}")
 
-print("\nAll 8 comprehensive plots successfully generated!")
+print("\nAll 11 comprehensive plots successfully generated!")
