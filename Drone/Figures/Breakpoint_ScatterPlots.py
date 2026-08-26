@@ -87,7 +87,7 @@ def generate_individual_plot(data, x_col, y_col, initial_guess):
 
     stats_text = f"Slope 1: {k1:.2f}\nSlope 2: {k2:.2f}\nBreakpoint: {x0:.1f}"
     props = dict(boxstyle='round', facecolor='white', alpha=0.3, edgecolor='gray')
-    ax.text(0.04, 0.96, stats_text, transform=ax.transAxes, fontsize=15,
+    ax.text(0.04, 0.96, stats_text, transform=ax.transAxes, fontsize=17,
             verticalalignment='top', horizontalalignment='left', bbox=props)
 
     # Format labels (Replace underscores for readability)
@@ -124,7 +124,7 @@ def generate_1x2_publication_subplot(data):
     axes[0].axvline(x=x0_1, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label='Breakpoint')
 
     stats_text1 = f"Slope 1: {k1_1:.2f}\nSlope 2: {k2_1:.2f}\nBreakpoint: {x0_1:.1f}%"
-    axes[0].text(0.04, 0.96, stats_text1, transform=axes[0].transAxes, fontsize=15,
+    axes[0].text(0.04, 0.96, stats_text1, transform=axes[0].transAxes, fontsize=17,
                  verticalalignment='top', horizontalalignment='left', bbox=props)
 
     axes[0].set_xlabel('Total Bare Ground (%)', weight='bold')
@@ -153,7 +153,7 @@ def generate_1x2_publication_subplot(data):
     axes[1].axvline(x=x0_2, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label='Breakpoint')
 
     stats_text2 = f"Slope 1: {k1_2:.2f}\nSlope 2: {k2_2:.2f}\nBreakpoint: {x0_2:.1f}%"
-    axes[1].text(0.04, 0.96, stats_text2, transform=axes[1].transAxes, fontsize=15,
+    axes[1].text(0.04, 0.96, stats_text2, transform=axes[1].transAxes, fontsize=17,
                  verticalalignment='top', horizontalalignment='left', bbox=props)
 
     axes[1].set_xlabel('Canopy Gap 101-200 cm (%)', weight='bold')
