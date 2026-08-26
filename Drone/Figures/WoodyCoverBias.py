@@ -136,7 +136,9 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 # ---------------------------------
 # 1. LEFT PANEL: Regression & Bounds
 # ---------------------------------
-ax1.set_title(r'$\bf{a.}$ Non-Parametric Regression', fontsize=20, pad=15)
+# Split the title alignments
+ax1.set_title(r'$\bf{a.}$', loc='left', fontsize=20, pad=15)
+ax1.set_title('Non-Parametric Regression', loc='center', fontsize=20, pad=15)
 
 # Bootstrapped CI
 ax1.fill_between(x_grid, ci_lower, ci_upper, color='red', alpha=0.3, zorder=1, label='95% Bootstrapped CI')
@@ -174,7 +176,9 @@ ax1.text(0.04, 0.96, stats_text_left, transform=ax1.transAxes, fontsize=15,
 # ---------------------------------
 # 2. RIGHT PANEL: Residuals
 # ---------------------------------
-ax2.set_title(r'$\bf{b.}$ Estimation Residuals', fontsize=20, pad=15)
+# Split the title alignments
+ax2.set_title(r'$\bf{b.}$', loc='left', fontsize=20, pad=15)
+ax2.set_title('Estimation Error', loc='center', fontsize=20, pad=15)
 
 ax2.axhline(0, color='black', linestyle='--', linewidth=1.5, zorder=1)
 
