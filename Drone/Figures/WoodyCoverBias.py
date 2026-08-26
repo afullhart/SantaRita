@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from scipy.stats import kendalltau, theilslopes
+from scipy.stats import pearsonr, kendalltau, theilslopes
 import matplotlib.pyplot as plt
 
 # --- Set publication-quality plot parameters ---
@@ -111,6 +111,9 @@ stats_text_left = (
 # ================================================
 # --- CALCULATIONS FOR RIGHT PANEL (RESIDUALS) ---
 # ================================================
+r_val, p_val_r = pearsonr(exact_wp, df['WP_Error'])
+r_squared = r_val**2
+
 res_error = theilslopes(df['WP_Error'], exact_wp, 0.95)
 error_slope = res_error[0]
 
@@ -118,6 +121,7 @@ tau_right, p_val_tau_right = kendalltau(exact_wp, df['WP_Error'])
 p_val_one_tailed = p_val_tau_right / 2
 
 stats_text_right = (
+    f"$R^2$: {r_squared:.3f}\n"
     f"Sen's Slope: {error_slope:.3f}\n"
     f"Kendall's $\\tau$: {tau_right:.3f}\n"
     f"$p$-value: {p_val_one_tailed:.3f}"
@@ -157,11 +161,13 @@ ax1.set_ylim(-5, 75)
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
 ax1.grid(axis='both', alpha=0.2, linestyle='-')
-ax1.legend(loc='lower right', frameon=True, fontsize=14, framealpha=0.3)
 
-# Stats text box (Inside top left)
+# Increased Legend Font Size
+ax1.legend(loc='lower right', frameon=True, fontsize=16, framealpha=0.3)
+
+# Increased Annotation Font Size (Left Panel)
 props = dict(boxstyle='round', facecolor='white', alpha=0.3, edgecolor='gray')
-ax1.text(0.04, 0.96, stats_text_left, transform=ax1.transAxes, fontsize=13,
+ax1.text(0.04, 0.96, stats_text_left, transform=ax1.transAxes, fontsize=15,
          verticalalignment='top', horizontalalignment='left', bbox=props)
 
 
@@ -184,8 +190,8 @@ ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
 ax2.grid(axis='both', alpha=0.2, linestyle='-')
 
-# Stats text box (Inside bottom right)
-ax2.text(0.96, 0.04, stats_text_right, transform=ax2.transAxes, fontsize=13,
+# Increased Annotation Font Size (Right Panel)
+ax2.text(0.96, 0.04, stats_text_right, transform=ax2.transAxes, fontsize=15,
          verticalalignment='bottom', horizontalalignment='right', bbox=props)
 
 # Layout adjustment and save
