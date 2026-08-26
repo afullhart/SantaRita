@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from scipy.stats import pearsonr, kendalltau, theilslopes
+from scipy.stats import kendalltau, theilslopes
 import matplotlib.pyplot as plt
 
 # --- Set publication-quality plot parameters ---
@@ -80,8 +80,6 @@ coverage = np.mean((sampled_wp >= pi_lower_interp) & (sampled_wp <= pi_upper_int
 
 pi_widths = pi_upper - pi_lower
 mean_pi_width = np.mean(pi_widths)
-min_pi_width = np.min(pi_widths)
-max_pi_width = np.max(pi_widths)
 
 # Left panel specific stats
 mae = np.mean(np.abs(sampled_wp - exact_wp))
@@ -106,17 +104,13 @@ stats_text_left = (
     f"Sig diff from 1: {sig_str}\n"
     f"--\n"
     f"PI Coverage: {coverage:.1f}%\n"
-    f"Mean PI Width: {mean_pi_width:.3f}\n"
-    f"Min/Max PI Width: {min_pi_width:.3f} / {max_pi_width:.3f}"
+    f"Mean PI Width: {mean_pi_width:.3f}"
 )
 
 
 # ================================================
 # --- CALCULATIONS FOR RIGHT PANEL (RESIDUALS) ---
 # ================================================
-r_val, p_val_r = pearsonr(exact_wp, df['WP_Error'])
-r_squared = r_val**2
-
 res_error = theilslopes(df['WP_Error'], exact_wp, 0.95)
 error_slope = res_error[0]
 
@@ -124,7 +118,6 @@ tau_right, p_val_tau_right = kendalltau(exact_wp, df['WP_Error'])
 p_val_one_tailed = p_val_tau_right / 2
 
 stats_text_right = (
-    f"$R^2$: {r_squared:.3f}\n"
     f"Sen's Slope: {error_slope:.3f}\n"
     f"Kendall's $\\tau$: {tau_right:.3f}\n"
     f"$p$-value: {p_val_one_tailed:.3f}"
