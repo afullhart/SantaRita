@@ -99,10 +99,8 @@ stats_text_left = (
     f"MAE: {mae:.3f}\n"
     f"MRE%: {mre:.2f}\n"
     f"PBIAS: {pbias:.2f}%\n"
-    f"--\n"
     f"MK Tau (y-x): {tau_left:.3f} (p: {p_val_left:.3f})\n"
     f"Sig diff from 1: {sig_str}\n"
-    f"--\n"
     f"PI Coverage: {coverage:.1f}%\n"
     f"Mean PI Width: {mean_pi_width:.3f}"
 )
