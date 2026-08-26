@@ -6,10 +6,10 @@ import matplotlib.pyplot as plt
 
 # --- Set publication-quality plot parameters ---
 plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelsize': 14,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
+    'font.size': 16,
+    'axes.labelsize': 18,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
     'axes.linewidth': 1.2,
     'font.family': 'sans-serif'
 })
@@ -88,7 +88,9 @@ mae = np.mean(np.abs(sampled_wp - exact_wp))
 mre = np.mean(np.abs(sampled_wp - exact_wp) / exact_wp) * 100
 pbias = (np.sum(sampled_wp - exact_wp) / np.sum(exact_wp)) * 100
 
-tau_left, p_val_left = kendalltau(exact_wp, df['WP_Error'])
+tau_left, p_val_left_two_sided = kendalltau(exact_wp, df['WP_Error'])
+p_val_left = p_val_left_two_sided / 2  # Convert to one-tailed p-value
+
 sig_diff = "Yes" if p_val_left < 0.05 else "No"
 dir_diff = "< 1" if tau_left < 0 else "> 1"
 sig_str = f"{sig_diff} ({dir_diff})" if sig_diff == "Yes" else "No"
@@ -137,7 +139,7 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 # ---------------------------------
 # 1. LEFT PANEL: Regression & Bounds
 # ---------------------------------
-ax1.set_title(r'$\bf{a.}$ Non-Parametric Regression', pad=10)
+ax1.set_title(r'$\bf{a.}$ Non-Parametric Regression', fontsize=20, pad=15)
 
 # Bootstrapped CI
 ax1.fill_between(x_grid, ci_lower, ci_upper, color='red', alpha=0.3, zorder=1, label='95% Bootstrapped CI')
@@ -146,7 +148,7 @@ ax1.fill_between(x_grid, ci_lower, ci_upper, color='red', alpha=0.3, zorder=1, l
 ax1.plot(x_grid, pi_lower, color='orange', linestyle='--', linewidth=1.5, zorder=2, label='95% Bootstrapped PI')
 ax1.plot(x_grid, pi_upper, color='orange', linestyle='--', linewidth=1.5, zorder=2)
 
-# Scatter (Styled to match Figure 15 / right panel)
+# Scatter 
 ax1.scatter(exact_wp, sampled_wp, color='#4C72B0', alpha=0.8, s=60, 
             edgecolor='black', linewidth=0.8, zorder=3, label='Data points')
 
@@ -162,18 +164,18 @@ ax1.set_ylim(-5, 75)
 ax1.spines['top'].set_visible(False)
 ax1.spines['right'].set_visible(False)
 ax1.grid(axis='both', alpha=0.2, linestyle='-')
-ax1.legend(loc='lower right', frameon=True, fontsize=11)
+ax1.legend(loc='lower right', frameon=True, fontsize=14, framealpha=0.3)
 
 # Stats text box (Inside top left)
-props = dict(boxstyle='round', facecolor='white', alpha=0.9, edgecolor='gray')
-ax1.text(0.04, 0.96, stats_text_left, transform=ax1.transAxes, fontsize=10,
+props = dict(boxstyle='round', facecolor='white', alpha=0.3, edgecolor='gray')
+ax1.text(0.04, 0.96, stats_text_left, transform=ax1.transAxes, fontsize=13,
          verticalalignment='top', horizontalalignment='left', bbox=props)
 
 
 # ---------------------------------
 # 2. RIGHT PANEL: Residuals
 # ---------------------------------
-ax2.set_title(r'$\bf{b.}$ Estimation Residuals', pad=10)
+ax2.set_title(r'$\bf{b.}$ Estimation Residuals', fontsize=20, pad=15)
 
 ax2.axhline(0, color='black', linestyle='--', linewidth=1.5, zorder=1)
 
@@ -189,9 +191,9 @@ ax2.spines['top'].set_visible(False)
 ax2.spines['right'].set_visible(False)
 ax2.grid(axis='both', alpha=0.2, linestyle='-')
 
-# Stats text box (Outside top right)
-ax2.text(1.02, 0.96, stats_text_right, transform=ax2.transAxes, fontsize=11,
-         verticalalignment='top', horizontalalignment='left', bbox=props)
+# Stats text box (Inside bottom right)
+ax2.text(0.96, 0.04, stats_text_right, transform=ax2.transAxes, fontsize=13,
+         verticalalignment='bottom', horizontalalignment='right', bbox=props)
 
 # Layout adjustment and save
 plt.tight_layout()
