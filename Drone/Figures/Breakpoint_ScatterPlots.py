@@ -14,22 +14,21 @@ os.makedirs(output_dir, exist_ok=True)
 csv_path = r'C:\Users\andre\ScatterPlots\SRER_NRI_Plots_110m.csv'
 df = pd.read_csv(csv_path)
 
-# Apply publication-ready global styling
+# Apply publication-ready global styling (Matched to Figure 14)
 plt.rcParams.update({
-    'font.size': 12,
-    'axes.labelsize': 14,
-    'axes.titlesize': 15,
-    'xtick.labelsize': 12,
-    'ytick.labelsize': 12,
-    'legend.fontsize': 11,
+    'font.size': 16,
+    'axes.labelsize': 18,
+    'xtick.labelsize': 14,
+    'ytick.labelsize': 14,
     'axes.linewidth': 1.2,
     'font.family': 'sans-serif',
     'font.sans-serif': ['Arial', 'Helvetica', 'DejaVu Sans']
 })
 
 # Define styling constants for consistency across all plots
-SCATTER_COLOR = '#4c72b0'  # Muted seaborn-style blue
-SCATTER_ALPHA = 0.6
+SCATTER_COLOR = '#4C72B0'  # Muted seaborn-style blue
+SCATTER_ALPHA = 0.8        # Increased opacity
+SCATTER_SIZE = 60
 LINE_COLOR = '#c44e52'     # Muted crimson
 LINE_WIDTH = 2.5
 VLINE_COLOR = '#555555'
@@ -65,9 +64,7 @@ def style_axes(ax):
     """Applies standard despining and grid styling to a given axis."""
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.spines['bottom'].set_linewidth(1.2)
-    ax.spines['left'].set_linewidth(1.2)
-    ax.grid(True, linestyle=':', alpha=0.6)
+    ax.grid(axis='both', linestyle='-', alpha=0.2)
 
 def generate_individual_plot(data, x_col, y_col, initial_guess):
     print(f"Generating single plot for {y_col} vs {x_col}...")
@@ -80,21 +77,24 @@ def generate_individual_plot(data, x_col, y_col, initial_guess):
 
     x0, y0, k1, k2 = params
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(8, 7))
 
-    ax.scatter(x, y, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='k', linewidth=0.5, s=40, label='Plot Data')
+    ax.scatter(x, y, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='black', linewidth=0.8, s=SCATTER_SIZE, label='Plot Data')
     ax.plot(x, y_pred, color=LINE_COLOR, linewidth=LINE_WIDTH, label=f'Piecewise Fit ($R^2$={r2:.2f})')
-    ax.axvline(x=x0, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label=f'Breakpoint: {x0:.1f}')
+    
+    # Label simply as "Breakpoint"
+    ax.axvline(x=x0, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label='Breakpoint')
 
     stats_text = f"Slope 1: {k1:.2f}\nSlope 2: {k2:.2f}\nBreakpoint: {x0:.1f}"
-    ax.text(0.05, 0.85, stats_text, transform=ax.transAxes,
-            bbox=dict(facecolor='white', alpha=0.9, edgecolor='lightgray', boxstyle='round,pad=0.5'))
+    props = dict(boxstyle='round', facecolor='white', alpha=0.3, edgecolor='gray')
+    ax.text(0.04, 0.96, stats_text, transform=ax.transAxes, fontsize=15,
+            verticalalignment='top', horizontalalignment='left', bbox=props)
 
     # Format labels (Replace underscores for readability)
     ax.set_xlabel(x_col.replace('_', ' '), weight='bold')
     ax.set_ylabel(y_col.replace('_', ' '), weight='bold')
-    ax.set_title(f'{y_col.replace("_", " ")} vs {x_col.replace("_", " ")}', pad=15)
-    ax.legend(loc='lower right', framealpha=0.9)
+    ax.set_title(f'{y_col.replace("_", " ")} vs {x_col.replace("_", " ")}', fontsize=20, pad=15)
+    ax.legend(loc='lower right', frameon=True, fontsize=16, framealpha=0.3)
     
     style_axes(ax)
     plt.tight_layout()
@@ -107,26 +107,34 @@ def generate_individual_plot(data, x_col, y_col, initial_guess):
 
 def generate_1x2_publication_subplot(data):
     print("\nGenerating Publication-Ready 1x2 LPI Subplot...")
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    # Shared text box styling
+    props = dict(boxstyle='round', facecolor='white', alpha=0.3, edgecolor='gray')
 
     # --- Subplot 1 (Left): BGR vs LPI ---
     guess_bgr = [25.0, 5.0, 0.2, 1.2]
     x1, y1, y_pred1, params1, r2_1 = get_piecewise_fit(data, 'Exact_BGR_Pct', 'Exact_LPI_Pct', guess_bgr)
     x0_1, y0_1, k1_1, k2_1 = params1
 
-    axes[0].scatter(x1, y1, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='k', linewidth=0.5, s=40, label='Plot Data')
+    axes[0].scatter(x1, y1, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='black', linewidth=0.8, s=SCATTER_SIZE, label='Plot Data')
     axes[0].plot(x1, y_pred1, color=LINE_COLOR, linewidth=LINE_WIDTH, label=f'Piecewise Fit ($R^2$={r2_1:.2f})')
-    axes[0].axvline(x=x0_1, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label=f'Breakpoint: {x0_1:.1f}%')
+    
+    # Label simply as "Breakpoint"
+    axes[0].axvline(x=x0_1, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label='Breakpoint')
 
     stats_text1 = f"Slope 1: {k1_1:.2f}\nSlope 2: {k2_1:.2f}\nBreakpoint: {x0_1:.1f}%"
-    axes[0].text(0.05, 0.82, stats_text1, transform=axes[0].transAxes,
-                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='lightgray', boxstyle='round,pad=0.5'))
+    axes[0].text(0.04, 0.96, stats_text1, transform=axes[0].transAxes, fontsize=15,
+                 verticalalignment='top', horizontalalignment='left', bbox=props)
 
     axes[0].set_xlabel('Total Bare Ground (%)', weight='bold')
     axes[0].set_ylabel('Largest Patch Index (%)', weight='bold')
-    axes[0].set_title('Bare Ground Coalescence Threshold', pad=15)
-    axes[0].legend(loc='lower right', framealpha=0.9)
-    axes[0].text(-0.1, 1.05, 'a.', transform=axes[0].transAxes, size=18, weight='bold')
+    
+    # Split Title Alignment
+    axes[0].set_title(r'$\bf{a.}$', loc='left', fontsize=20, pad=15)
+    axes[0].set_title('Bare Ground Coalescence Threshold', loc='center', fontsize=20, pad=15)
+    
+    axes[0].legend(loc='lower right', frameon=True, fontsize=16, framealpha=0.3)
     style_axes(axes[0])
 
     # --- Subplot 2 (Right): Gap 101-200 vs LPI ---
@@ -138,19 +146,24 @@ def generate_1x2_publication_subplot(data):
     x2, y2, y_pred2, params2, r2_2 = get_piecewise_fit(data, gap_col, 'Exact_LPI_Pct', guess_gap)
     x0_2, y0_2, k1_2, k2_2 = params2
 
-    axes[1].scatter(x2, y2, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='k', linewidth=0.5, s=40, label='Plot Data')
+    axes[1].scatter(x2, y2, alpha=SCATTER_ALPHA, color=SCATTER_COLOR, edgecolor='black', linewidth=0.8, s=SCATTER_SIZE, label='Plot Data')
     axes[1].plot(x2, y_pred2, color=LINE_COLOR, linewidth=LINE_WIDTH, label=f'Piecewise Fit ($R^2$={r2_2:.2f})')
-    axes[1].axvline(x=x0_2, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label=f'Breakpoint: {x0_2:.1f}%')
+    
+    # Label simply as "Breakpoint"
+    axes[1].axvline(x=x0_2, color=VLINE_COLOR, linestyle='--', linewidth=1.5, zorder=0, label='Breakpoint')
 
     stats_text2 = f"Slope 1: {k1_2:.2f}\nSlope 2: {k2_2:.2f}\nBreakpoint: {x0_2:.1f}%"
-    axes[1].text(0.05, 0.82, stats_text2, transform=axes[1].transAxes,
-                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='lightgray', boxstyle='round,pad=0.5'))
+    axes[1].text(0.04, 0.96, stats_text2, transform=axes[1].transAxes, fontsize=15,
+                 verticalalignment='top', horizontalalignment='left', bbox=props)
 
     axes[1].set_xlabel('Canopy Gap 101-200 cm (%)', weight='bold')
     axes[1].set_ylabel('Largest Patch Index (%)', weight='bold')
-    axes[1].set_title('Canopy Gap Coalescence Threshold', pad=15)
-    axes[1].legend(loc='lower right', framealpha=0.9)
-    axes[1].text(-0.1, 1.05, 'b.', transform=axes[1].transAxes, size=18, weight='bold')
+    
+    # Split Title Alignment
+    axes[1].set_title(r'$\bf{b.}$', loc='left', fontsize=20, pad=15)
+    axes[1].set_title('Canopy Gap Coalescence Threshold', loc='center', fontsize=20, pad=15)
+    
+    axes[1].legend(loc='lower right', frameon=True, fontsize=16, framealpha=0.3)
     style_axes(axes[1])
 
     plt.tight_layout()
