@@ -233,7 +233,8 @@ fig1, axes1 = plt.subplots(1, 3, figsize=(22, 8))
 sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[0], 
             annot_kws={"size": 18}, cbar_kws={'label': 'Pearson $r$'}, mask=r_pivot.isnull()) 
 add_strikes(axes1[0], r_pivot)  
-axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', pad=20, fontsize=22, fontweight='bold')
+axes1[0].annotate('a.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes1[0].set_ylabel('') # Removed ylabel to allow subplots to expand
 axes1[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[0].tick_params(axis='both', which='major', labelsize=16)
@@ -242,7 +243,8 @@ axes1[0].tick_params(axis='both', which='major', labelsize=16)
 sns.heatmap(rho_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[1], 
             annot_kws={"size": 18}, cbar_kws={'label': r'Spearman $\rho$'}, mask=rho_pivot.isnull()) 
 add_strikes(axes1[1], rho_pivot)  
-axes1[1].set_title(r'Spearman Rank Correlation ($\rho$)' + '\nExact vs Sampled', pad=20, fontsize=22, fontweight='bold')
+axes1[1].annotate('b.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes1[1].set_title(r'Spearman Rank Correlation ($\rho$)' + '\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes1[1].set_ylabel('')
 axes1[1].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[1].tick_params(axis='both', which='major', labelsize=16)
@@ -251,7 +253,8 @@ axes1[1].tick_params(axis='both', which='major', labelsize=16)
 sns.heatmap(sens_pivot, annot=sens_annot, fmt="", cmap="vlag", center=1.0, ax=axes1[2], 
             annot_kws={"size": 18}, cbar_kws={'label': "Sen's Slope"}, mask=sens_pivot.isnull()) 
 add_strikes(axes1[2], sens_pivot)  
-axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", pad=20, fontsize=22, fontweight='bold')
+axes1[2].annotate('c.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", loc='center', fontsize=22, fontweight='normal', pad=20)
 axes1[2].set_ylabel('')
 axes1[2].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[2].tick_params(axis='both', which='major', labelsize=16)
@@ -260,6 +263,7 @@ axes1[2].tick_params(axis='both', which='major', labelsize=16)
 plt.tight_layout(w_pad=1.0)
 plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
+
 
 # ====================================================================
 # 7. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
@@ -276,7 +280,8 @@ fig2, axes2 = plt.subplots(1, 3, figsize=(22, 8))
 sns.heatmap(pbias_pivot, annot=pbias_annot, fmt="", cmap="vlag", center=0, ax=axes2[0], 
             annot_kws={"size": 18}, cbar_kws={'label': 'Percent Bias (%)'}, mask=pbias_pivot.isnull()) 
 add_strikes(axes2[0], pbias_pivot)  
-axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', pad=20, fontsize=22, fontweight='bold')
+axes2[0].annotate('a.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes2[0].set_ylabel('') # Removed ylabel to allow subplots to expand
 axes2[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[0].tick_params(axis='both', which='major', labelsize=16)
@@ -285,7 +290,8 @@ axes2[0].tick_params(axis='both', which='major', labelsize=16)
 sns.heatmap(mae_pivot, annot=mae_annot, fmt="", cmap="Reds", ax=axes2[1], 
             annot_kws={"size": 18}, cbar_kws={'label': 'Mean Absolute Error'}, mask=mae_pivot.isnull()) 
 add_strikes(axes2[1], mae_pivot)  
-axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', pad=20, fontsize=22, fontweight='bold')
+axes2[1].annotate('b.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes2[1].set_ylabel('')
 axes2[1].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[1].tick_params(axis='both', which='major', labelsize=16)
@@ -294,7 +300,8 @@ axes2[1].tick_params(axis='both', which='major', labelsize=16)
 sns.heatmap(mre_pivot, annot=mre_annot, fmt="", cmap="Oranges", ax=axes2[2], 
             annot_kws={"size": 18}, cbar_kws={'label': "Mean Relative Error (%)"}, mask=mre_pivot.isnull()) 
 add_strikes(axes2[2], mre_pivot)  
-axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", pad=20, fontsize=22, fontweight='bold')
+axes2[2].annotate('c.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
+axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", loc='center', fontsize=22, fontweight='normal', pad=20)
 axes2[2].set_ylabel('')
 axes2[2].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[2].tick_params(axis='both', which='major', labelsize=16)
@@ -302,6 +309,7 @@ axes2[2].tick_params(axis='both', which='major', labelsize=16)
 plt.tight_layout(w_pad=1.0)
 plt.savefig(r'C:\Users\andre\ScatterPlots\Error_Metrics_Heatmaps.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
+
 
 # ====================================================================
 # 8. PLOTTING - FIGURE 3: Mean Prediction Interval Width (MPIW)
