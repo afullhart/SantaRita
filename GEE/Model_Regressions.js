@@ -72,11 +72,9 @@ function runCV(targetProp) {
     });
 
     var may_mse = with_sq_err.filter(ee.Filter.eq('Month', 'May'))
-      .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
       .reduceColumns({reducer: ee.Reducer.mean(), selectors: ['sq_diff']}).get('mean');
       
     var sep_mse = with_sq_err.filter(ee.Filter.eq('Month', 'Sept'))
-      .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
       .reduceColumns({reducer: ee.Reducer.mean(), selectors: ['sq_diff']}).get('mean');
     
     return ee.Dictionary({
@@ -142,7 +140,6 @@ function getStratifiedTrainingRMSE(trainedModel, dataset, targetProp, monthFilte
     var diff = ee.Number(ft.get('predicted')).subtract(ee.Number(ft.get(targetProp)));
     return ft.set('sq_diff', diff.multiply(diff));
   })
-  .randomColumn('limit_sort').sort('limit_sort').limit(1000) 
   .reduceColumns({
     reducer: ee.Reducer.mean(),
     selectors: ['sq_diff']
