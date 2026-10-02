@@ -44,13 +44,13 @@ def add_log_hwr(ft):
 
 hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Ratio'])).map(add_log_hwr)
 
-var hyperpars = {
-  numberOfTrees: 300,   // Down from 400.
-  shrinkage: 0.02,      // Keep at 0.02
-  samplingRate: 0.6,    // Keep at 0.6
-  maxNodes: 8,          // Down from 10. (6 caused underfitting, 10 is slightly overfitting).
-  loss: 'Huber',
-  seed: 123
+hyperpars = {
+  'numberOfTrees': 300,   # Down from 400.
+  'shrinkage': 0.02,      # Keep at 0.02
+  'samplingRate': 0.6,    # Keep at 0.6
+  'maxNodes': 8,          # Down from 10. (6 caused underfitting, 10 is slightly overfitting).
+  'loss': 'Huber',
+  'seed': 123
 };
 
 model_bgr = ee.Classifier.smileGradientTreeBoost(**hyperpars).setOutputMode('REGRESSION').train(core_training_fc, 'BGR', inputProps)
