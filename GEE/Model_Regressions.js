@@ -40,12 +40,12 @@ var v_list_seeds = ee.List([123, 456, 789, 111, 333]);
 var fold_list = ee.List.sequence(0, 4);
 
 var hyperpars = {
-  numberOfTrees: 400,
-  shrinkage: 0.05,  
-  samplingRate: 0.7,
-  maxNodes: 32, 
+  numberOfTrees: 300,   // Down from 400.
+  shrinkage: 0.02,      // Keep at 0.02
+  samplingRate: 0.6,    // Keep at 0.6
+  maxNodes: 8,          // Down from 10. (6 caused underfitting, 10 is slightly overfitting).
   loss: 'Huber',
-  seed: null
+  seed: 123
 };
 
 var fc_folds = fc.randomColumn('random', 123).map(function(ft) {
@@ -237,3 +237,35 @@ Export.table.toDrive({
   folder: 'GEE_Downloads',
   fileFormat: 'CSV'
 });
+
+// =========================================================================
+// EXTRACT & PLOT VARIABLE IMPORTANCE
+// =========================================================================
+print('--- VARIABLE IMPORTANCE CHARTS ---');
+
+function plotImportance(model, title, colorHex) {
+  // Extract the importance dictionary from the trained model
+  var importance = ee.Dictionary(model.explain().get('importance'));
+  
+  // Create a bar chart
+  var chart = ui.Chart.array.values({
+    array: importance.values(),
+    axis: 0,
+    xLabels: importance.keys()
+  })
+  .setChartType('ColumnChart')
+  .setOptions({
+    title: title + ' - Predictor Importance',
+    hAxis: {title: 'Landsat Bands & Indices', slantedText: true, slantedTextAngle: 45},
+    vAxis: {title: 'Relative Importance'},
+    legend: {position: 'none'},
+    colors: [colorHex]
+  });
+  
+  print(chart);
+}
+
+// Plot importance for a few key targets
+plotImportance(model_woody, 'Woody Cover', '#8c510a');
+plotImportance(model_herb, 'Herbaceous Cover', '#91cf60');
+plotImportance(model_bgr, 'Bare Ground', '#d73027');
