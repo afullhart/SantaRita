@@ -32,7 +32,12 @@ var hwr_training_fc = core_training_fc.filter(ee.Filter.notNull(['Herb_Woody_Rat
 });
 
 var hyperpars = {
-  numberOfTrees: 400, shrinkage: 0.05, samplingRate: 0.7, maxNodes: 32, loss: 'Huber', seed: 123
+  numberOfTrees: 300,   // Down from 400. Stops the model before it can overthink the noise.
+  shrinkage: 0.02,      // Keep at 0.02
+  samplingRate: 0.6,    // Keep at 0.6
+  maxNodes: 8,          // Down from 10. (Remember 6 caused underfitting, 10 is slightly overfitting).
+  loss: 'Huber',
+  seed: 123
 };
 
 var model_bgr = ee.Classifier.smileGradientTreeBoost(hyperpars).setOutputMode('REGRESSION').train({features: core_training_fc, classProperty: 'BGR', inputProperties: inputProps});
