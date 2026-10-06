@@ -7,7 +7,7 @@ var bounds_fc = ee.FeatureCollection('projects/ee-andrewfullhart/assets/SR_bound
 var cloud_windows = ee.FeatureCollection('projects/ee-andrewfullhart/assets/Cloud_FeatureClass_Landsat');
 var bounds_geom = bounds_fc.first().geometry().bounds();
 
-var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled').clip(v_extent);
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled').clip(bounds_geom);
 var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180); 
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
