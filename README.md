@@ -143,5 +143,5 @@ graph TD
 4. **Generate 30 m DEM** Earth Engine Asset using `Export_30m_DEM.js`.
 5. **Generate feature table** Earth Engine Asset of monthly clear sky dates using `Export_Cloud_FeatureClass.js`.
 6. **Generate training feature table** Earth Engine Asset using `Model_FeatureClass.js`.
-7. **Run visualization or model fitting scripts** (`Model_Regressions.js`, `Model_Visualization.js`, `Model_RegionalTrends.js`, `Cloud_Visualization.js`).
+7. **Run visualization and/or model fitting scripts** (`Model_Regressions.js`, `Model_Visualization.js`, `Model_RegionalTrends.js`, `Cloud_Visualization.js`).
 8. **Download the maps** with `Export_Maps.ipynb`.
