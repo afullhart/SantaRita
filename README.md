@@ -1,4 +1,4 @@
-### GEE Workflow for Predictive Landscape Metric Maps
+# GEE Workflow for Predictive Landscape Metric Maps
 
 ```mermaid
 graph TD
@@ -94,7 +94,7 @@ graph TD
   class O1,O2,O5,O6,O7 output;
 ```
 
-### Scripts
+## Scripts
 
 * **`Export_30m_DEM.js`**: Resamples the high-resolution 1m USGS 3DEP Digital Elevation Model to a 30m spatial resolution using a true spatial mean reduction (averaging 900 native pixels per output pixel). This avoids aliasing errors and ensures perfect grid alignment with the native Landsat scale for downstream topographic metrics.
 
@@ -110,7 +110,7 @@ graph TD
 
 * **`Export_Maps.ipynb`**: Iterates through the 40-year cloud-free monthly index, classifying each Landsat composite and applying an 30m spatial predictions across the entire SRER boundary. Submits batch export tasks directly to Google Drive. It stacks all 6 predictions (BGR, LPI, MFT, Herb, Woody, and Log HWR) into one multi-band 30m GeoTIFF per month. Takes 4-5 hrs.
 
-### Data sources
+## Data sources
 
 * **`5cm Classified Images`**: https://gee-community-catalog.org/projects/srer_drone/
 
@@ -133,7 +133,7 @@ graph TD
 * **`SRER Footprint`**: https://www.arcgis.com/home/item.html?id=1fa8b9b97e844aaf8170a95c6e2a3b76 
 
 
-# Steps
+## Steps
 
 > **Note:** Any scripts with personal project ID paths should use your own ID path (e.g., lines 4 and 34 of `Export_30m_DEM.js`). Earth Engine Assets are generated in two ways: by uploading them to [code.earthengine.google.com](https://code.earthengine.google.com) and by running scripts that generate Assets.
 
