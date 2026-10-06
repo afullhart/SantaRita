@@ -22,7 +22,7 @@ var v_extent = bounds_geom.bounds();
 // ========================================================================= 
 // TOPOGRAPHIC PRE-PROCESSING 
 // ========================================================================= 
-var dem = ee.Image('USGS/3DEP/10m').clip(v_extent);
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled').clip(v_extent);
 var terrain_slope = ee.Terrain.slope(dem).multiply(Math.PI / 180); 
 var terrain_aspect = ee.Terrain.aspect(dem).multiply(Math.PI / 180);
 
