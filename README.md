@@ -132,3 +132,16 @@ graph TD
 
 * **`SRER Footprint`**: https://www.arcgis.com/home/item.html?id=1fa8b9b97e844aaf8170a95c6e2a3b76 
 
+
+# Steps
+
+> **Note:** Any scripts with personal project ID paths should use your own ID path (e.g., lines 4 and 34 of `Export_30m_DEM.js`). Earth Engine Assets are generated in two ways: by uploading them to [code.earthengine.google.com](https://code.earthengine.google.com) and by running scripts that generate Assets.
+
+1. **Upload drone footprint shapefile** as an Earth Engine Asset named `SR_drone_footprints` ([ArcGIS Asset](https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83#overview)).
+2. **Upload ecostate footprint shapefile** as an Earth Engine Asset named `SR_ecological_states` ([ArcGIS Asset](https://www.arcgis.com/home/item.html?id=50b30d505bd2491e9412217139b7df83#overview)).
+3. **Upload SRER boundary shapefile** as an Earth Engine Asset named `SR_bounds` ([ArcGIS Asset](https://www.arcgis.com/home/item.html?id=1fa8b9b97e844aaf8170a95c6e2a3b76#overview)).
+4. **Generate 30 m DEM** Earth Engine Asset using `Export_30m_DEM.js`.
+5. **Generate feature table** Earth Engine Asset of monthly clear sky dates using `Export_Cloud_FeatureClass.js`.
+6. **Generate training feature table** Earth Engine Asset using `Model_FeatureClass.js`.
+7. **Run visualization or model fitting scripts** (`Model_Regressions.js`, `Model_Visualization.js`, `Model_RegionalTrends.js`, `Cloud_Visualization.js`).
+8. **Download the maps** with `Export_Maps.js`.
