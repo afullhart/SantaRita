@@ -9,7 +9,7 @@ var bounds_geom = bounds_fc.first().geometry().bounds();
 // =========================================================================
 // TOPOGRAPHIC PRE-PROCESSING & HILLSHADE VISUALS
 // =========================================================================
-var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_10m_DEM_Resampled'); 
+var dem = ee.Image('projects/ee-andrewfullhart/assets/SR_30m_DEM_Resampled');
 
 var hillshade = ee.Terrain.hillshade(dem, 270, 45);
 var hillshade_norm = hillshade.divide(255.0);
