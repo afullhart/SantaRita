@@ -686,6 +686,7 @@ if __name__ == '__main__':
     img_path2 = os.path.join(script_dir, 'Simulation_Cover_Metrics.svg')
     img_path3 = os.path.join(script_dir, 'Simulation_Spatial_Metrics_Rows.svg')
     csv_path = os.path.join(script_dir, 'Simulation_Metrics_MultiScale.csv')
+    mae_df.to_csv(csv_path, index=False)
     
     fig.savefig(img_path1, format='svg', dpi=300, bbox_inches='tight')
     fig2.savefig(img_path2, format='svg', dpi=300, bbox_inches='tight')
