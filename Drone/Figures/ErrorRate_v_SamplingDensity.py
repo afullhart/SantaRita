@@ -32,9 +32,16 @@ gap_keys = list(gap_cats.keys())
 gap_coords = [(2, 1), (3, 0), (3, 1), (4, 0), (4, 1)]
 
 
-# --- POWER LAW FUNCTION ---
+# --- POWER LAW FUNCTION & EQUATION FORMATTER ---
 def power_law(x, a, b, c):
     return a * np.power(x, -b) + c
+
+def format_c_term(c_val):
+    """Formats the constant offset c with a single sign and prevents '- 0.00'."""
+    c_rounded = round(float(c_val), 2)
+    if c_rounded < 0:
+        return f"- {abs(c_rounded):.2f}"
+    return f"+ {abs(c_rounded):.2f}"
 
 
 # --- HELPER FUNCTION FOR STANDARD PLOTTING ---
@@ -93,8 +100,9 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
             r2 = 1 - (ss_res / ss_tot)
             
             r2_str = ">0.999" if r2 > 0.999 else f"{r2:.3f}"
+            c_str = format_c_term(c)
             
-            eq_text_return = fr'$y = {a:.2f}x^{{-{b:.2f}}} + {c:.2f} \ \ \ (R^2 = {r2_str})$'
+            eq_text_return = fr'$y = {a:.2f}x^{{-{b:.2f}}} {c_str} \ \ \ (R^2 = {r2_str})$'
             return_data = {'eq_text': eq_text_return, 'params': (a, b, c, np.min(x_fit), np.max(x_fit))}
             
             if extra_curves is not None:
@@ -128,7 +136,7 @@ def plot_error_convergence(ax, x_vals, mae_errs, rel_errs, title, x_label, y_lab
                     r'$\bf{110m:}$ ' + eq_text_return
                 )
             else:
-                display_text = fr'$y = {a:.2f}x^{{-{b:.2f}}} + {c:.2f}$' + '\n' + fr'$R^2 = {r2_str}$'
+                display_text = fr'$y = {a:.2f}x^{{-{b:.2f}}} {c_str}$' + '\n' + fr'$R^2 = {r2_str}$'
                 
             ax.text(0.95, 0.95, display_text, transform=ax.transAxes, fontsize=14,
                   verticalalignment='top', horizontalalignment='right',
@@ -227,7 +235,8 @@ def plot_subset_convergence(ax, x_vals, mae_dict, title, x_label, y_label):
                 r2 = 1 - (ss_res / ss_tot)
                 
                 r2_str = ">0.999" if r2 > 0.999 else f"{r2:.3f}"
-                eq_texts.append(fr'$\bf{{{safe_name}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} + {c_param:.2f} \ (R^2 = {r2_str})$')
+                c_str = format_c_term(c_param)
+                eq_texts.append(fr'$\bf{{{safe_name}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} {c_str} \ (R^2 = {r2_str})$')
             except Exception as e:
                 eq_texts.append(fr'$\bf{{{safe_name}:}}$ Fit Failed')
         else:
@@ -316,7 +325,8 @@ def plot_comparison_convergence(ax, x_pts, y_pts, label_pts, x_lines, y_lines, l
                 r2 = 1 - (ss_res / ss_tot)
                 
                 r2_str = ">0.999" if r2 > 0.999 else f"{r2:.3f}"
-                eq_texts.append(fr'$\bf{{{short_label}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} + {c_param:.2f} \ (R^2 = {r2_str})$')
+                c_str = format_c_term(c_param)
+                eq_texts.append(fr'$\bf{{{short_label}:}}$ $y = {a:.2f}x^{{-{b:.2f}}} {c_str} \ (R^2 = {r2_str})$')
             except Exception as e:
                 eq_texts.append(fr'$\bf{{{short_label}:}}$ Fit Failed')
         else:
