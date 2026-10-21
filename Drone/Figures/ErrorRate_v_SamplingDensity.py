@@ -527,7 +527,7 @@ if '110m_NRI' in data_cache:
 
     build_master_legend(axes[0, 1], master_lines, master_labels)
 
-    fig.suptitle('Convergence Summary Across Spatial Scales (Mapped to 110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
+    fig.suptitle('Random Point Convergence Summary Across Spatial Scales (Mapped to 110m NRI Base)', fontsize=26, fontweight='bold', y=0.98)
     fig.tight_layout(rect=[0, 0.03, 1, 0.95], pad=2.5)  
 
     summary_img_path = os.path.join(out_folder, '110m_NRI_CrossScale_Summary.svg')
