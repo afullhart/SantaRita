@@ -33,53 +33,65 @@ df['WP_Error'] = sampled_wp - exact_wp
 # --- CALCULATIONS FOR LEFT PANEL (FIT) ---
 # ==========================================
 print("Calculating non-parametric regression and 2000 bootstrap iterations. Please wait...")
-np.random.seed(42) # For reproducible bootstrapping
+np.random.seed(42)  # Matches Error_Metric_Heatmaps.py if np.random.seed(42) is set there
+rng_grid = np.random.default_rng(42)  # Separate RNG for x_grid plotting so main RNG stream is untouched
 
 # Main Theil-Sen fit
 res_left = theilslopes(sampled_wp, exact_wp, 0.95)
 slope, intercept, lo_slope, up_slope = res_left
 
-# Bootstrapping for CI and PI bounds
+# Bootstrapping for CI and PI bounds (Consistent with Error_Metric_Heatmaps.py)
 n_boot = 2000
-n_points = len(exact_wp)
-x_grid = np.linspace(0, 60, 100) # Grid matches the 0-60 x-axis
+X = exact_wp.values
+Y = sampled_wp.values
+n_points = len(X)
+x_grid = np.linspace(0, 60, 100)  # Grid matches the 0-60 x-axis for plotting curves
 
-boot_ci = np.zeros((n_boot, len(x_grid)))
-boot_pi = np.zeros((n_boot, len(x_grid)))
+# Arrays for plotting smooth CI and PI curves across x_grid
+boot_ci_grid = np.zeros((n_boot, len(x_grid)))
+boot_pi_grid = np.zeros((n_boot, len(x_grid)))
 
-main_preds = slope * exact_wp + intercept
-residuals = sampled_wp - main_preds
+# Array for evaluating PI width and coverage at the original X values
+pi_preds_obs = np.zeros((n_boot, n_points))
 
 for i in range(n_boot):
-    # Resample pairs for CI
-    idx = np.random.choice(np.arange(n_points), size=n_points, replace=True)
-    x_b = exact_wp.iloc[idx]
-    y_b = sampled_wp.iloc[idx]
+    # Pairs Bootstrapping (identical to Error_Metric_Heatmaps.py)
+    indices = np.random.choice(n_points, size=n_points, replace=True)
+    x_b = X[indices]
+    y_b = Y[indices]
     
-    # Fit resampled data
-    res_b = theilslopes(y_b, x_b)
-    slope_b, int_b = res_b[0], res_b[1]
+    # Fit Bootstrap Model using Theil-Sen Estimator
+    if np.std(x_b) == 0:
+        slope_b, int_b = 0, np.median(y_b)
+    else:
+        res_b = theilslopes(y_b, x_b)
+        slope_b, int_b = res_b[0], res_b[1]
     
-    # Generate line for CI
-    boot_ci[i, :] = slope_b * x_grid + int_b
+    # Calculate Empirical Residuals from the bootstrap fit
+    residuals_b = y_b - (slope_b * x_b + int_b)
     
-    # Resample residuals for PI
-    res_idx = np.random.choice(np.arange(n_points), size=len(x_grid), replace=True)
-    boot_pi[i, :] = boot_ci[i, :] + residuals.iloc[res_idx].values
+    # Predict over the ORIGINAL X values and add resampled residuals
+    y_hat_obs = slope_b * X + int_b
+    noise_obs = np.random.choice(residuals_b, size=n_points, replace=True)
+    pi_preds_obs[i, :] = y_hat_obs + noise_obs
+    
+    # Generate lines across x_grid for plotting CI and PI curves
+    boot_ci_grid[i, :] = slope_b * x_grid + int_b
+    noise_grid = rng_grid.choice(residuals_b, size=len(x_grid), replace=True)
+    boot_pi_grid[i, :] = boot_ci_grid[i, :] + noise_grid
 
-# Extract 95% bounds
-ci_lower = np.percentile(boot_ci, 2.5, axis=0)
-ci_upper = np.percentile(boot_ci, 97.5, axis=0)
-pi_lower = np.percentile(boot_pi, 2.5, axis=0)
-pi_upper = np.percentile(boot_pi, 97.5, axis=0)
+# Extract 95% bounds on x_grid (for plotting)
+ci_lower = np.percentile(boot_ci_grid, 2.5, axis=0)
+ci_upper = np.percentile(boot_ci_grid, 97.5, axis=0)
+pi_lower = np.percentile(boot_pi_grid, 2.5, axis=0)
+pi_upper = np.percentile(boot_pi_grid, 97.5, axis=0)
 
-# Calculate PI Coverage and Widths
-pi_lower_interp = np.interp(exact_wp, x_grid, pi_lower)
-pi_upper_interp = np.interp(exact_wp, x_grid, pi_upper)
-coverage = np.mean((sampled_wp >= pi_lower_interp) & (sampled_wp <= pi_upper_interp)) * 100
+# Extract 95% PI bounds at the original X values (for MPIW and Coverage)
+pi_lo_obs = np.percentile(pi_preds_obs, 2.5, axis=0)
+pi_up_obs = np.percentile(pi_preds_obs, 97.5, axis=0)
 
-pi_widths = pi_upper - pi_lower
-mean_pi_width = np.mean(pi_widths)
+coverage = np.mean((Y >= pi_lo_obs) & (Y <= pi_up_obs)) * 100
+mean_pi_width = np.mean(pi_up_obs - pi_lo_obs)
 
 # Left panel specific stats
 mae = np.mean(np.abs(sampled_wp - exact_wp))
