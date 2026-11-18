@@ -21,28 +21,31 @@ df = pd.read_csv(csv_path)
 bins = np.arange(0, 105, 5)
 df['BG_Bin'] = pd.cut(df['Exact_BGR_Pct'], bins=bins, include_lowest=True, right=False)
 
-cover_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
+cover_scales = ['5cm', '25cm', '50cm', '100cm', '200cm']
 
-# Calculate Errors (Sampled - Exact) for Bare Ground
+# Calculate Errors (Sampled - Exact) for Bare Ground (mapping '5cm' display to '0cm' CSV column)
 for scale in cover_scales:
-    df[f'BG_{scale}_Error'] = df[f'NRI_BGR_{scale}_Pct'] - df['Exact_BGR_Pct']
+    csv_scale = '0cm' if scale == '5cm' else scale
+    df[f'BG_{scale}_Error'] = df[f'NRI_BGR_{csv_scale}_Pct'] - df['Exact_BGR_Pct']
 
 # Calculate Errors for Herbaceous and Woody
 for scale in cover_scales:
-    if f'NRI_Herb_{scale}_Pct' in df.columns and 'Exact_Herb_Pct' in df.columns:
-        df[f'Herb_{scale}_Error'] = df[f'NRI_Herb_{scale}_Pct'] - df['Exact_Herb_Pct']
-    if f'NRI_Woody_{scale}_Pct' in df.columns and 'Exact_Woody_Pct' in df.columns:
-        df[f'Woody_{scale}_Error'] = df[f'NRI_Woody_{scale}_Pct'] - df['Exact_Woody_Pct']
+    csv_scale = '0cm' if scale == '5cm' else scale
+    if f'NRI_Herb_{csv_scale}_Pct' in df.columns and 'Exact_Herb_Pct' in df.columns:
+        df[f'Herb_{scale}_Error'] = df[f'NRI_Herb_{csv_scale}_Pct'] - df['Exact_Herb_Pct']
+    if f'NRI_Woody_{csv_scale}_Pct' in df.columns and 'Exact_Woody_Pct' in df.columns:
+        df[f'Woody_{scale}_Error'] = df[f'NRI_Woody_{csv_scale}_Pct'] - df['Exact_Woody_Pct']
 
 # Calculate Errors for Fetch
-fetch_scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
+fetch_scales = ['5cm', '25cm', '50cm', '100cm', '200cm']
 for scale in fetch_scales:
-    df[f'Fetch_{scale}_Error'] = df[f'NRI_Fetch_{scale}'] - df['Exact_Fetch_m']
+    csv_scale = '0cm' if scale == '5cm' else scale
+    df[f'Fetch_{scale}_Error'] = df[f'NRI_Fetch_{csv_scale}'] - df['Exact_Fetch_m']
 
 # Calculate Errors for Canopy Gaps
 gap_cols = ['Gap_0_24', 'Gap_25_50', 'Gap_51_100', 'Gap_101_200', 'Gap_gt_200']
 for gap in gap_cols:
-    df[f'{gap}_0cm_Error'] = df[f'NRI_{gap}'] - df[f'Exact_{gap}']
+    df[f'{gap}_5cm_Error'] = df[f'NRI_{gap}'] - df[f'Exact_{gap}']
 
 # ====================================================================
 # 3. DATA AGGREGATION
@@ -82,7 +85,11 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
     
     # Aggregate BG
     for scale in cover_scales:
-        d[f'BG_{scale}_Val'] = group[f'NRI_BGR_{scale}_Pct'].mean()
+        d[f'BG_{scale}_Val'] = group[f'NRI_BGR_{0 if scale == "5cm" else scale}_Pct' if scale == '5cm' else f'NRI_BGR_{scale}_Pct'].mean() if False else group[f'BG_{scale}_Error'].mean() # placeholder logic matched below
+        # Clean standard aggregation:
+    for scale in cover_scales:
+        csv_scale = '0cm' if scale == '5cm' else scale
+        d[f'BG_{scale}_Val'] = group[f'NRI_BGR_{csv_scale}_Pct'].mean()
         d[f'BG_{scale}_MAE'] = group[f'BG_{scale}_Error'].abs().mean()
         d[f'BG_{scale}_MRE'] = calc_mre(group[f'BG_{scale}_Error'], group['Exact_BGR_Pct'])
         d[f'BG_{scale}_Bias'] = group[f'BG_{scale}_Error'].mean()
@@ -90,7 +97,8 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
     # Aggregate Herbaceous
     for scale in cover_scales:
         if f'Herb_{scale}_Error' in group.columns:
-            d[f'Herb_{scale}_Val'] = group[f'NRI_Herb_{scale}_Pct'].mean()
+            csv_scale = '0cm' if scale == '5cm' else scale
+            d[f'Herb_{scale}_Val'] = group[f'NRI_Herb_{csv_scale}_Pct'].mean()
             d[f'Herb_{scale}_MAE'] = group[f'Herb_{scale}_Error'].abs().mean()
             d[f'Herb_{scale}_MRE'] = calc_mre(group[f'Herb_{scale}_Error'], group['Exact_Herb_Pct'])
             d[f'Herb_{scale}_Bias'] = group[f'Herb_{scale}_Error'].mean()
@@ -98,26 +106,28 @@ for bin_val, group in df.groupby('BG_Bin', observed=False):
     # Aggregate Woody
     for scale in cover_scales:
         if f'Woody_{scale}_Error' in group.columns:
-            d[f'Woody_{scale}_Val'] = group[f'NRI_Woody_{scale}_Pct'].mean()
+            csv_scale = '0cm' if scale == '5cm' else scale
+            d[f'Woody_{scale}_Val'] = group[f'NRI_Woody_{csv_scale}_Pct'].mean()
             d[f'Woody_{scale}_MAE'] = group[f'Woody_{scale}_Error'].abs().mean()
             d[f'Woody_{scale}_MRE'] = calc_mre(group[f'Woody_{scale}_Error'], group['Exact_Woody_Pct'])
             d[f'Woody_{scale}_Bias'] = group[f'Woody_{scale}_Error'].mean()
         
     # Aggregate Fetch
     for scale in fetch_scales:
-        if f'NRI_Fetch_{scale}' in group.columns:
-            d[f'Fetch_{scale}_Val'] = group[f'NRI_Fetch_{scale}'].mean()
+        if f'Fetch_{scale}_Error' in group.columns:
+            csv_scale = '0cm' if scale == '5cm' else scale
+            d[f'Fetch_{scale}_Val'] = group[f'NRI_Fetch_{csv_scale}'].mean()
             d[f'Fetch_{scale}_MAE'] = group[f'Fetch_{scale}_Error'].abs().mean()
             d[f'Fetch_{scale}_MRE'] = calc_mre(group[f'Fetch_{scale}_Error'], group['Exact_Fetch_m'])
             d[f'Fetch_{scale}_Bias'] = group[f'Fetch_{scale}_Error'].mean()
         
     # Aggregate Gaps
     for gap in gap_cols:
-        if f'{gap}_0cm_Error' in group.columns:
-            d[f'{gap}_0cm_Val'] = group[f'NRI_{gap}'].mean()
-            d[f'{gap}_0cm_MAE'] = group[f'{gap}_0cm_Error'].abs().mean()
-            d[f'{gap}_0cm_MRE'] = calc_mre(group[f'{gap}_0cm_Error'], group[f'Exact_{gap}'])
-            d[f'{gap}_0cm_Bias'] = group[f'{gap}_0cm_Error'].mean()
+        if f'{gap}_5cm_Error' in group.columns:
+            d[f'{gap}_5cm_Val'] = group[f'NRI_{gap}'].mean()
+            d[f'{gap}_5cm_MAE'] = group[f'{gap}_5cm_Error'].abs().mean()
+            d[f'{gap}_5cm_MRE'] = calc_mre(group[f'{gap}_5cm_Error'], group[f'Exact_{gap}'])
+            d[f'{gap}_5cm_Bias'] = group[f'{gap}_5cm_Error'].mean()
         
     results.append(d)
 
@@ -158,7 +168,7 @@ def autoscale_y_robust(ax, margin=0.05, force_zero=False):
 # 5. GLOBAL PLOTTING CONFIGURATION
 # ====================================================================
 scale_colors = {
-    '0cm': 'black',
+    '5cm': 'black',
     '25cm': 'forestgreen',
     '50cm': 'dodgerblue',
     '100cm': 'darkorange',
@@ -169,15 +179,15 @@ scale_colors = {
 # PLOTTING - FIGURE 1: Original 4x9 Configuration
 # ====================================================================
 plot_config_1 = [
-    ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['0cm'], 'steelblue'),
-    ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['0cm'], 'cadetblue'),
-    ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['0cm'], 'mediumseagreen'),
-    ('Gap_101_200', 'Canopy Gap 101-200cm (%)', ['0cm'], 'darkorange'),
-    ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['0cm'], 'firebrick'),
-    ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
+    ('BG', 'Total Bare Ground (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Fetch', 'Mean Fetch (m)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Gap_0_24', 'Canopy Gap 0-24cm (%)', ['5cm'], 'steelblue'),
+    ('Gap_25_50', 'Canopy Gap 25-50cm (%)', ['5cm'], 'cadetblue'),
+    ('Gap_51_100', 'Canopy Gap 51-100cm (%)', ['5cm'], 'mediumseagreen'),
+    ('Gap_101_200', 'Canopy Gap 101-200cm (%)', ['5cm'], 'darkorange'),
+    ('Gap_gt_200', 'Canopy Gap >200cm (%)', ['5cm'], 'firebrick'),
+    ('Herb', 'Herbaceous Cover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Woody', 'Woody Cover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None)
 ]
 
 fig1, axes1 = plt.subplots(4, 9, figsize=(36, 16), constrained_layout=True)
@@ -207,7 +217,7 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
             continue
             
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+        label_name = f'{scale} Point' if scale != '5cm' else '5cm Point'
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
         
         ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
@@ -270,16 +280,16 @@ for col, (prefix, title, scales, col_color) in enumerate(plot_config_1):
 # PLOTTING - FIGURE 2: UNIQUE 2x5 DRONE VALUES GRID
 # ====================================================================
 plot_config_2 = [
-    ('BG', 'Total Bare\nGround (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Herb', 'Herbaceous\nCover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Woody', 'Woody\nCover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Fetch', 'Mean\nFetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('BG', 'Total Bare\nGround (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Herb', 'Herbaceous\nCover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Woody', 'Woody\nCover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Fetch', 'Mean\nFetch (m)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
     ('LPI', 'Largest Patch\nIndex (%)', [], 'black'), 
-    ('Gap_0_24', 'Canopy Gap\n0-24 cm (%)', ['0cm'], 'steelblue'),
-    ('Gap_25_50', 'Canopy Gap\n25-50 cm (%)', ['0cm'], 'cadetblue'),
-    ('Gap_51_100', 'Canopy Gap\n51-100 cm (%)', ['0cm'], 'mediumseagreen'),
-    ('Gap_101_200', 'Canopy Gap\n101-200 cm (%)', ['0cm'], 'darkorange'),
-    ('Gap_gt_200', 'Canopy Gap\n+200 cm (%)', ['0cm'], 'firebrick')
+    ('Gap_0_24', 'Canopy Gap\n0-24 cm (%)', ['5cm'], 'steelblue'),
+    ('Gap_25_50', 'Canopy Gap\n25-50 cm (%)', ['5cm'], 'cadetblue'),
+    ('Gap_51_100', 'Canopy Gap\n51-100 cm (%)', ['5cm'], 'mediumseagreen'),
+    ('Gap_101_200', 'Canopy Gap\n101-200 cm (%)', ['5cm'], 'darkorange'),
+    ('Gap_gt_200', 'Canopy Gap\n+200 cm (%)', ['5cm'], 'firebrick')
 ]
 
 plt.rcParams.update({
@@ -318,7 +328,7 @@ for idx, (prefix, title, scales, col_color) in enumerate(plot_config_2):
             continue
             
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        label = f'{scale}' if scale != '0cm' else '0cm Cont.'
+        label = f'{scale}' if scale != '5cm' else '5cm'
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 6}
         
         ax.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label, **line_kws)
@@ -351,13 +361,13 @@ fig2.supylabel("Fraction % (or, m for Mean Fetch)", fontsize=14, weight='bold')
 plt.rcdefaults() # Reset rcParams to avoid constrained_layout squishing from Figure 2
 
 fig3_config = [
-    ('BG', 'Total Bare Ground (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Herb', 'Herbaceous Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Woody', 'Woody Cover (%)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None)
+    ('BG', 'Total Bare Ground (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Herb', 'Herbaceous Cover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Woody', 'Woody Cover (%)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None)
 ]
 
 fig3, axes3 = plt.subplots(3, 4, figsize=(16, 12), constrained_layout=True)
-fig3.suptitle("Drone Imagery Cover Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
+fig3.suptitle("  Drone Imagery Cover Metrics Across Bare Ground Gradient", fontsize=20, weight='bold')
 
 for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
     ax_val = axes3[row, 0]
@@ -378,7 +388,7 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
             continue
             
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+        label_name = f'{scale} Point' if scale != '5cm' else '5cm Point'
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
         
         ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
@@ -438,16 +448,16 @@ for row, (prefix, title, scales, col_color) in enumerate(fig3_config):
 # PLOTTING - FIGURE 4: SPATIAL METRICS (FETCH, GAPS)
 # ====================================================================
 fig4_config = [
-    ('Fetch', 'Mean Fetch (m)', ['0cm', '25cm', '50cm', '100cm', '200cm'], None),
-    ('Gap_0_24', 'Canopy Gap\n0-24cm (%)', ['0cm'], 'steelblue'),
-    ('Gap_25_50', 'Canopy Gap\n25-50cm (%)', ['0cm'], 'cadetblue'),
-    ('Gap_51_100', 'Canopy Gap\n51-100cm (%)', ['0cm'], 'mediumseagreen'),
-    ('Gap_101_200', 'Canopy Gap\n101-200cm (%)', ['0cm'], 'darkorange'),
-    ('Gap_gt_200', 'Canopy Gap\n>200cm (%)', ['0cm'], 'firebrick')
+    ('Fetch', 'Mean Fetch (m)', ['5cm', '25cm', '50cm', '100cm', '200cm'], None),
+    ('Gap_0_24', 'Canopy Gap\n0-24cm (%)', ['5cm'], 'steelblue'),
+    ('Gap_25_50', 'Canopy Gap\n25-50cm (%)', ['5cm'], 'cadetblue'),
+    ('Gap_51_100', 'Canopy Gap\n51-100cm (%)', ['5cm'], 'mediumseagreen'),
+    ('Gap_101_200', 'Canopy Gap\n101-200cm (%)', ['5cm'], 'darkorange'),
+    ('Gap_gt_200', 'Canopy Gap\n>200cm (%)', ['5cm'], 'firebrick')
 ]
 
 fig4, axes4 = plt.subplots(6, 4, figsize=(16, 24), constrained_layout=True)
-fig4.suptitle("Drone Imagery Spatial Metrics Across Bare Ground Gradient", fontsize=24, weight='bold')
+fig4.suptitle("Drone Imagery Spatial Structure Metrics Across Bare Ground Gradient", fontsize=24, weight='bold')
 
 for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
     ax_val = axes4[row, 0]
@@ -466,7 +476,7 @@ for row, (prefix, title, scales, col_color) in enumerate(fig4_config):
             continue
             
         color = scale_colors[scale] if len(scales) > 1 else col_color
-        label_name = f'{scale} Point' if scale != '0cm' else '0cm Continuous'
+        label_name = f'{scale} Point' if scale != '5cm' else '5cm Point'
         line_kws = {'marker': 'o', 'color': color, 'linestyle': '-', 'linewidth': 2.5, 'markersize': 7}
         
         ax_val.plot(mae_df['True_BG_Mean'], mae_df[f'{var_base}_Val'], label=label_name, **line_kws)
