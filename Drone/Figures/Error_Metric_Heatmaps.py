@@ -32,20 +32,21 @@ metrics_info = {
     'CGF +200': {'exact': 'Exact_Gap_gt_200', 'nri_pattern': 'NRI_Gap_gt_200', 'is_gap': True},
 }
 
-scales = ['0cm', '25cm', '50cm', '100cm', '200cm']
+scales = ['5cm', '25cm', '50cm', '100cm', '200cm']
 results = []
 
 # ====================================================================
-# 2. NON-PARAMETRIC BOOTSTRAP FUNCTION
+# 2. NON-PARAMETRIC BOOTSTRAP FUNCTION (WITH FIXED SEED)
 # ====================================================================
-def compute_pi_width(X, Y, n_boot=2000, alpha=0.05):
-    """Calculates the mean width of non-parametric prediction intervals."""
+def compute_pi_width(X, Y, n_boot=2000, alpha=0.05, seed=42):
+    """Calculates the mean width of non-parametric prediction intervals deterministically."""
+    rng = np.random.default_rng(seed)
     n = len(X)
     pi_preds = np.zeros((n_boot, n))
 
     for i in range(n_boot):
-        # Pairs Bootstrapping
-        indices = np.random.choice(n, size=n, replace=True)
+        # Pairs Bootstrapping using generator
+        indices = rng.choice(n, size=n, replace=True)
         x_boot = X[indices]
         y_boot = Y[indices]
 
@@ -63,7 +64,7 @@ def compute_pi_width(X, Y, n_boot=2000, alpha=0.05):
         y_hat = slope * X + intercept
 
         # Add Resampled Residuals
-        noise = np.random.choice(residuals, size=n, replace=True)
+        noise = rng.choice(residuals, size=n, replace=True)
         pi_preds[i, :] = y_hat + noise
 
     # Extract Percentiles for the Bounds
@@ -96,8 +97,8 @@ def calculate_stats(scl, x_vals, y_vals):
         sum_x = np.sum(x_vals)
         pbias = (np.sum(y_vals - x_vals) / sum_x) * 100 if sum_x != 0 else np.nan
         
-        # Mean Prediction Interval Width (Bootstrapped)
-        mpiw = compute_pi_width(x_vals.values, y_vals.values, n_boot=2000)
+        # Mean Prediction Interval Width (Bootstrapped with seed=42 for reproducibility)
+        mpiw = compute_pi_width(x_vals.values, y_vals.values, n_boot=2000, seed=42)
         
         # Significance of Sen's Slope != 1 (1-Tailed Mann-Kendall)
         y_trans = y_vals - x_vals
@@ -127,19 +128,22 @@ for metric, info in metrics_info.items():
     exact_col = info['exact']
     
     if info.get('is_gap'):
-        # Gaps use only the 0cm baseline (No specific scale suffix)
+        # Gaps use only the 5cm baseline (stored without scale suffix in CSV)
         nri_col = info['nri_pattern']
         if exact_col in df.columns and nri_col in df.columns:
             valid_idx = df[exact_col].notna() & df[nri_col].notna()
             x = df.loc[valid_idx, exact_col]
             y = df.loc[valid_idx, nri_col]
             
-            res = calculate_stats('0cm', x, y)
+            res = calculate_stats('5cm', x, y)
             if res: results.append(res)
     else:
-        # Check across all specified scales (0cm, 25cm, 50cm, etc.)
+        # Check across all specified scales (5cm, 25cm, 50cm, etc.)
         for scale in scales:
-            nri_col = info['nri_pattern'].format(scale=scale)
+            # Map the '5cm' display scale to the CSV's '0cm' column naming convention
+            csv_scale_tag = '0cm' if scale == '5cm' else scale
+            nri_col = info['nri_pattern'].format(scale=csv_scale_tag)
+                
             if exact_col in df.columns and nri_col in df.columns:
                 valid_idx = df[exact_col].notna() & df[nri_col].notna()
                 x = df.loc[valid_idx, exact_col]
@@ -164,7 +168,7 @@ mpiw_pivot = res_df.pivot(index='Metric', columns='Scale', values='MPIW')
 
 # Applied ordering from top-to-bottom with original labels
 metric_order = ['BGR', 'HP', 'WP', 'MF', 'CGF 0-24', 'CGF 25-50', 'CGF 51-100', 'CGF 101-200', 'CGF +200']
-scale_order = ['0cm', '25cm', '50cm', '100cm', '200cm']
+scale_order = ['5cm', '25cm', '50cm', '100cm', '200cm']
 
 # Safe reindexing to maintain desired visual plotting order
 pivots = [r_pivot, rho_pivot, sens_pivot, sig_pivot, pbias_pivot, mae_pivot, mre_pivot, mpiw_pivot]
@@ -207,7 +211,6 @@ def create_2dec_annot(data_pivot):
             if pd.isna(val):
                 annot[i, j] = ""
             else:
-                # Apply 3 decimal places specifically for Mean Fetch (MF)
                 annot[i, j] = f"{val:.2f}"
     return annot
 
@@ -226,7 +229,6 @@ for i in range(sens_pivot.shape[0]):
 # ====================================================================
 # 6. PLOTTING - FIGURE 1: Pearson r, Spearman rho, & Sen's Slope
 # ====================================================================
-# Widened to 22x8 to make individual subplots wider
 fig1, axes1 = plt.subplots(1, 3, figsize=(22, 8))
 
 # Left Plot: Pearson r
@@ -235,8 +237,8 @@ sns.heatmap(r_pivot, annot=True, fmt=".2f", cmap="Blues", ax=axes1[0],
 add_strikes(axes1[0], r_pivot)  
 axes1[0].annotate('a.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes1[0].set_title('Pearson Correlation ($r$)\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
-axes1[0].set_ylabel('') # Removed ylabel to allow subplots to expand
-axes1[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes1[0].set_ylabel('') 
+axes1[0].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[0].tick_params(axis='both', which='major', labelsize=16)
 
 # Middle Plot: Spearman rho
@@ -246,7 +248,7 @@ add_strikes(axes1[1], rho_pivot)
 axes1[1].annotate('b.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes1[1].set_title(r'Spearman Rank Correlation ($\rho$)' + '\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes1[1].set_ylabel('')
-axes1[1].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes1[1].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[1].tick_params(axis='both', which='major', labelsize=16)
 
 # Right Plot: Sen's Slope (with Significance Asterisks)
@@ -256,10 +258,9 @@ add_strikes(axes1[2], sens_pivot)
 axes1[2].annotate('c.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes1[2].set_title("Sen's Slope\nExact vs Sampled (* Sig < 1 or > 1)", loc='center', fontsize=22, fontweight='normal', pad=20)
 axes1[2].set_ylabel('')
-axes1[2].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes1[2].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes1[2].tick_params(axis='both', which='major', labelsize=16)
 
-# Decreased padding to 1.0 to squeeze the subplots slightly closer together
 plt.tight_layout(w_pad=1.0)
 plt.savefig(r'C:\Users\andre\ScatterPlots\Exact_vs_Sampled_Heatmaps.svg', format='svg', dpi=300, bbox_inches='tight')
 plt.show()
@@ -268,12 +269,10 @@ plt.show()
 # ====================================================================
 # 7. PLOTTING - FIGURE 2: PBIAS, MAE, & MRE
 # ====================================================================
-# Generate custom annotations for Figure 2
 pbias_annot = create_2dec_annot(pbias_pivot)
 mae_annot = create_custom_annot(mae_pivot)
 mre_annot = create_2dec_annot(mre_pivot)
 
-# Widened to 22x8 to make individual subplots wider
 fig2, axes2 = plt.subplots(1, 3, figsize=(22, 8))
 
 # Left Plot: Percent Bias (PBIAS)
@@ -282,8 +281,8 @@ sns.heatmap(pbias_pivot, annot=pbias_annot, fmt="", cmap="vlag", center=0, ax=ax
 add_strikes(axes2[0], pbias_pivot)  
 axes2[0].annotate('a.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes2[0].set_title('Percent Bias (PBIAS)\nExact vs Sampled (%)', loc='center', fontsize=22, fontweight='normal', pad=20)
-axes2[0].set_ylabel('') # Removed ylabel to allow subplots to expand
-axes2[0].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes2[0].set_ylabel('') 
+axes2[0].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[0].tick_params(axis='both', which='major', labelsize=16)
 
 # Middle Plot: Mean Absolute Error (MAE)
@@ -293,7 +292,7 @@ add_strikes(axes2[1], mae_pivot)
 axes2[1].annotate('b.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes2[1].set_title('Mean Absolute Error (MAE)\nExact vs Sampled', loc='center', fontsize=22, fontweight='normal', pad=20)
 axes2[1].set_ylabel('')
-axes2[1].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes2[1].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[1].tick_params(axis='both', which='major', labelsize=16)
 
 # Right Plot: Mean Relative Error (MRE)
@@ -303,7 +302,7 @@ add_strikes(axes2[2], mre_pivot)
 axes2[2].annotate('c.\n', xy=(0, 1), xytext=(-80, 20), xycoords='axes fraction', textcoords='offset points', fontsize=24, fontweight='bold', ha='right', va='bottom')
 axes2[2].set_title("Mean Relative Error (MRE)\nExact vs Sampled (% of Exact)", loc='center', fontsize=22, fontweight='normal', pad=20)
 axes2[2].set_ylabel('')
-axes2[2].set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+axes2[2].set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 axes2[2].tick_params(axis='both', which='major', labelsize=16)
 
 plt.tight_layout(w_pad=1.0)
@@ -314,19 +313,16 @@ plt.show()
 # ====================================================================
 # 8. PLOTTING - FIGURE 3: Mean Prediction Interval Width (MPIW)
 # ====================================================================
-# Generate custom annotations for Figure 3
 mpiw_annot = create_custom_annot(mpiw_pivot)
 
-# Slightly widened to match the individual subplot proportions of the new figures
 fig3, ax3 = plt.subplots(figsize=(8.5, 8))
 
-# Single Plot: Mean Prediction Interval Width
 sns.heatmap(mpiw_pivot, annot=mpiw_annot, fmt="", cmap="Purples", ax=ax3, 
             annot_kws={"size": 18}, cbar_kws={'label': 'Mean PI Width'}, mask=mpiw_pivot.isnull()) 
 add_strikes(ax3, mpiw_pivot)  
 ax3.set_title("Mean 95% Prediction Interval Width\nExact vs Sampled", pad=20, fontsize=22, fontweight='bold')
-ax3.set_ylabel('Ground Cover Metric', fontsize=18, fontweight='bold')
-ax3.set_xlabel('NRI Transect Sampling Scale', fontsize=18, fontweight='bold')
+ax3.set_ylabel('Indicator', fontsize=18, fontweight='bold')
+ax3.set_xlabel('Transect Sampling Scale', fontsize=18, fontweight='bold')
 ax3.tick_params(axis='both', which='major', labelsize=16)
 
 plt.tight_layout()
